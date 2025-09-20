@@ -1,0 +1,1843 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Green Template Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        // This function is now globally available and will be called by the Google script.
+        // It dispatches a custom event that our main module script can listen for.
+        // This avoids the race condition error.
+        function onGoogleScriptsLoad() {
+            window.dispatchEvent(new Event('google-scripts-loaded'));
+        }
+    </script>
+    <script src="https://accounts.google.com/gsi/client" onload="onGoogleScriptsLoad()" async defer></script>
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        window.firebase = {
+            initializeApp, getAuth, signInAnonymously, onAuthStateChanged, getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, updateDoc, deleteDoc
+        };
+    </script>
+    <style>
+        body {
+            font-family: 'VT323', monospace;
+            background-color: #0F2923;
+            /* Deep Green */
+            color: #E0E0E0;
+            position: relative;
+            overflow-x: hidden;
+            /* Prevent horizontal scrollbar */
+        }
+
+        .widget {
+            background-color: rgba(57, 65, 74, 0.5);
+            /* Semi-transparent background */
+            backdrop-filter: blur(10px);
+            /* Frosted glass effect */
+            -webkit-backdrop-filter: blur(10px);
+            /* Safari support */
+            border-radius: 8px;
+            padding: 1.25rem;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            /* Subtle border */
+        }
+
+        .pixelated-bg {
+            /* The background image will be set by JavaScript */
+            background-color: #5B6F55;
+            /* Added a fallback color */
+            background-size: cover;
+            background-position: center;
+            height: 200px;
+            image-rendering: pixelated;
+        }
+
+        .music-progress::-webkit-progress-bar {
+            background-color: #4A5568;
+            border-radius: 5px;
+        }
+
+        .music-progress::-webkit-progress-value {
+            background-color: #68D391;
+            border-radius: 5px;
+        }
+
+        .music-progress::-moz-progress-bar {
+            background-color: #68D391;
+            border-radius: 5px;
+        }
+
+        .task-checkbox {
+            appearance: none;
+            width: 1.25rem;
+            height: 1.25rem;
+            border: 2px solid #A0AEC0;
+            border-radius: 4px;
+            display: inline-block;
+            position: relative;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .task-checkbox:checked {
+            background-color: #68D391;
+            border-color: #68D391;
+        }
+
+        .task-checkbox:checked::after {
+            content: '✔';
+            font-size: 1rem;
+            color: #2E3338;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .task-item.completed span {
+            text-decoration: line-through;
+            color: #A0AEC0;
+        }
+
+        .course-tag {
+            background-color: #ECC94B;
+            color: #2E3338;
+            font-size: 0.8rem;
+            padding: 2px 8px;
+            border-radius: 12px;
+        }
+
+        /* Floating elements styles */
+        .floating-elements {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        .floaty {
+            position: absolute;
+            background: rgba(104, 211, 145, 0.15);
+            border-radius: 50%;
+            animation: floatUp 25s infinite ease-in-out;
+            opacity: 0;
+            bottom: -100px;
+            /* Start from below the screen */
+        }
+
+        @keyframes floatUp {
+            0% {
+                transform: translateY(0) scale(1);
+                opacity: 0;
+            }
+
+            10%,
+            90% {
+                opacity: 1;
+            }
+
+            100% {
+                transform: translateY(-120vh) scale(1.5);
+                opacity: 0;
+            }
+        }
+
+        .gemini-response {
+            white-space: pre-wrap;
+            background: #2E3338;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-top: 1rem;
+            min-height: 50px;
+        }
+
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #68D391;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 1rem auto;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Chat styles */
+        .chat-message {
+            display: flex;
+            margin-bottom: 1rem;
+            align-items: flex-end;
+            gap: 0.5rem;
+        }
+
+        .chat-message.user {
+            justify-content: flex-end;
+        }
+
+        .chat-bubble {
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            max-width: 80%;
+            line-height: 1.5;
+        }
+
+        .chat-bubble.other-user,
+        .chat-bubble.ai {
+            background-color: #2E3338;
+        }
+
+        .chat-bubble.user {
+            background-color: #48BB78;
+            color: #1A202C;
+        }
+
+        .chat-sender-id {
+            font-size: 0.75rem;
+            color: #A0AEC0;
+            margin-bottom: 0.25rem;
+        }
+
+        /* Health Gauge Styles */
+        .health-gauge {
+            position: relative;
+            width: 120px;
+            height: 60px;
+            /* Half of width */
+            margin: 0 auto;
+        }
+
+        .gauge-arc {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        .gauge-arc-segments {
+            width: 120px;
+            height: 60px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .gauge-arc-segments::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 200%;
+            /* Double height for full circle */
+            border-radius: 50%;
+            background: conic-gradient(from -90deg,
+                    #F87171 0deg 36deg,
+                    /* Red */
+                    #FBBF24 36deg 72deg,
+                    /* Amber */
+                    #FCD34D 72deg 108deg,
+                    /* Yellow */
+                    #A3E635 108deg 144deg,
+                    /* Lime */
+                    #4ADE80 144deg 180deg
+                    /* Green */
+                );
+        }
+
+        .gauge-arc-mask {
+            position: absolute;
+            top: 10px;
+            /* Arc thickness */
+            left: 10px;
+            /* Arc thickness */
+            width: 100px;
+            /* Width - 2 * thickness */
+            height: 100px;
+            background: #39414A;
+            /* Same as widget background */
+            border-radius: 50%;
+        }
+
+        .gauge-needle-container {
+            position: absolute;
+            bottom: -5px;
+            left: 50%;
+            width: 2px;
+            height: 50px;
+            transform-origin: bottom center;
+            animation: sweep-needle 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+            transform: rotate(var(--needle-angle, -90deg));
+        }
+
+        @keyframes sweep-needle {
+            from {
+                transform: rotate(-90deg);
+            }
+
+            to {
+                transform: rotate(var(--needle-angle));
+            }
+        }
+
+        .gauge-needle {
+            width: 100%;
+            height: 100%;
+            background-color: #F87171;
+            border-radius: 2px;
+        }
+
+        .gauge-text {
+            margin-top: 0.5rem;
+            text-align: center;
+        }
+
+        .gauge-value {
+            font-size: 1.5rem;
+            display: block;
+        }
+
+        .gauge-label {
+            font-size: 0.9rem;
+            color: #A0AEC0;
+        }
+
+        .journal-entry-item {
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .gradient-button-container {
+            padding: 2px;
+            border-radius: 12px;
+            background: conic-gradient(from 180deg at 50% 50%, #FBBF24, #A3E635, #4ADE80, #F87171, #FBBF24);
+        }
+    </style>
+</head>
+
+<body class="p-4 md:p-8">
+
+    <!-- Floating Elements Background -->
+    <div class="floating-elements">
+        <div class="floaty" style="width: 10px; height: 10px; left: 5%; animation-duration: 20s; animation-delay: 0s;">
+        </div>
+        <div class="floaty" style="width: 20px; height: 20px; left: 15%; animation-duration: 30s; animation-delay: 5s;">
+        </div>
+        <div class="floaty" style="width: 12px; height: 12px; left: 25%; animation-duration: 18s; animation-delay: 2s;">
+        </div>
+        <div class="floaty" style="width: 15px; height: 15px; left: 40%; animation-duration: 28s; animation-delay: 8s;">
+        </div>
+        <div class="floaty"
+            style="width: 18px; height: 18px; left: 55%; animation-duration: 22s; animation-delay: 12s;"></div>
+        <div class="floaty" style="width: 8px; height: 8px; left: 70%; animation-duration: 35s; animation-delay: 1s;">
+        </div>
+        <div class="floaty" style="width: 16px; height: 16px; left: 85%; animation-duration: 24s; animation-delay: 6s;">
+        </div>
+        <div class="floaty"
+            style="width: 13px; height: 13px; left: 95%; animation-duration: 26s; animation-delay: 10s;"></div>
+    </div>
+
+
+    <div class="max-w-7xl mx-auto relative z-10">
+        <!-- SOS Button -->
+        <button id="sos-btn"
+            class="fixed top-8 right-8 bg-orange-400 text-white p-3 rounded-full shadow-lg hover:bg-orange-500 transition-transform hover:scale-110 z-40">
+            <i data-lucide="siren" class="w-6 h-6"></i>
+        </button>
+
+        <!-- Header Image -->
+        <div class="pixelated-bg rounded-lg relative">
+            <div class="absolute inset-0 bg-black/40 rounded-lg"></div> <!-- Brightness Overlay -->
+            <div class="absolute -bottom-8 left-8">
+                <button id="profile-pic-container"
+                    class="bg-[#39414A]/50 backdrop-blur-[10px] p-3 rounded-lg border border-white/10 shadow-[0_0_20px_rgba(160,130,255,0.5)] transition-transform hover:scale-105">
+                    <span id="profile-pic-emoji" class="text-5xl">☘️</span>
+                </button>
+            </div>
+            <div class="absolute bottom-4 left-32 text-2xl">
+                <span id="user-anonymous-name" class="font-bold"></span>
+            </div>
+        </div>
+
+        <!-- Main Dashboard Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 pt-6 mt-6">
+
+            <!-- Sidebar -->
+            <div class="lg:col-span-1 flex flex-col gap-6">
+                <div class="widget">
+                    <button id="study-help-btn" class="gradient-button-container w-full">
+                        <div
+                            class="bg-black rounded-lg p-3 text-center hover:bg-gray-900 transition-colors flex items-center justify-center gap-2 text-lg">
+                            <i data-lucide="graduation-cap" class="w-5 h-5 text-yellow-400"></i>
+                            <span>Study Help !!</span>
+                        </div>
+                    </button>
+                </div>
+                <div class="widget h-full">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-xl">Chat Rooms</h2>
+                        <div class="flex items-center gap-2">
+                            <button class="text-gray-400 hover:text-white"><i data-lucide="search"
+                                    class="w-5 h-5"></i></button>
+                        </div>
+                    </div>
+                    <div class="space-y-2">
+                        <button
+                            class="chatroom-btn w-full text-left p-2 rounded hover:bg-white/10 transition-colors flex items-center gap-2"
+                            data-room-name="General Chat">
+                            <i data-lucide="message-square" class="w-4 h-4"></i> General Chat
+                        </button>
+                        <button
+                            class="chatroom-btn w-full text-left p-2 rounded hover:bg-white/10 transition-colors flex items-center gap-2"
+                            data-room-name="Study Group">
+                            <i data-lucide="book-open" class="w-4 h-4"></i> Study Group
+                        </button>
+                        <button
+                            class="chatroom-btn w-full text-left p-2 rounded hover:bg-white/10 transition-colors flex items-center gap-2"
+                            data-room-name="Gaming Corner">
+                            <i data-lucide="gamepad-2" class="w-4 h-4"></i> Gaming Corner
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Main Content Area -->
+            <div class="lg:col-span-3 grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <!-- Left Column -->
+                <div class="lg:col-span-1 flex flex-col gap-6">
+                    <!-- Quick Links -->
+                    <div class="widget">
+                        <div class="flex justify-between items-center">
+                            <h2 class="text-xl mb-3 flex items-center gap-2"><i data-lucide="link-2"
+                                    class="w-5 h-5"></i> Quick Links</h2>
+                            <button id="quick-goal-btn"
+                                class="text-sm bg-green-500/80 text-white px-3 py-1 rounded hover:bg-green-600">✨ Quick
+                                Goal</button>
+                        </div>
+                        <ul id="quick-links-list" class="space-y-2 mt-2">
+                            <li><a href="#" class="hover:text-green-400">✧ dream life</a></li>
+                            <li><a href="#" class="hover:text-green-400">✧ notes</a></li>
+                        </ul>
+                    </div>
+
+                    <!-- Journaling -->
+                    <div class="widget">
+                        <div class="flex justify-between items-center mb-3">
+                            <h2 class="text-xl flex items-center gap-2"><i data-lucide="book-heart" class="w-5 h-5"></i>
+                                Journaling</h2>
+                            <div class="flex items-center gap-2 text-sm text-gray-400">
+                                <span>Local</span>
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" id="journal-storage-toggle" class="sr-only peer">
+                                    <div
+                                        class="w-11 h-6 bg-gray-600 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-500">
+                                    </div>
+                                </label>
+                                <span>Server</span>
+                            </div>
+                        </div>
+                        <button id="shadow-work-prompt-btn"
+                            class="w-full text-sm bg-purple-500/80 text-white px-3 py-2 rounded hover:bg-purple-600 mb-3">🔮
+                            New Shadow Work Prompt</button>
+                        <textarea id="journal-entry"
+                            class="w-full h-32 bg-[#2E3338] p-2 rounded border border-[#4A5568] focus:outline-none focus:ring-2 focus:ring-purple-400 text-base"
+                            placeholder="What's on your mind?"></textarea>
+                        <button id="save-journal-entry-btn"
+                            class="w-full mt-2 text-sm bg-green-500/80 text-white px-3 py-2 rounded hover:bg-green-600">Save
+                            Entry</button>
+
+                        <div id="journal-history-container" class="mt-4">
+                            <h3 class="text-lg mb-2">Past Entries</h3>
+                            <div id="journal-history-list" class="space-y-2 max-h-40 overflow-y-auto pr-2">
+                                <!-- Journal history will be loaded here -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- AI Assistant Widget -->
+                    <div class="widget">
+                        <h2 class="text-xl mb-3 flex items-center gap-2">✨ AI Assistant</h2>
+                        <p class="text-gray-400 mb-3 text-base">What do you want to brainstorm or generate today?</p>
+                        <div class="flex gap-2">
+                            <input type="text" id="gemini-prompt-input" placeholder="e.g., Ideas for a weekend trip"
+                                class="w-full bg-[#2E3338] p-2 rounded border border-[#4A5568] focus:outline-none focus:ring-2 focus:ring-green-400 text-base">
+                            <button id="gemini-generate-btn"
+                                class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">Generate</button>
+                        </div>
+                        <div id="gemini-response-container" class="gemini-response"></div>
+                    </div>
+
+
+                    <!-- Weather -->
+                    <div class="widget">
+                        <h2 class="text-sm text-gray-400">DELHI WEATHER</h2>
+                        <div class="flex items-center justify-between mt-2">
+                            <p class="text-5xl">28°C</p>
+                            <div class="text-right">
+                                <i data-lucide="cloud-sun" class="w-12 h-12 ml-auto"></i>
+                                <p>broken clouds</p>
+                            </div>
+                        </div>
+                        <div class="mt-4 pt-4 border-t border-gray-600 flex justify-between text-center">
+                            <div class="flex flex-col items-center">
+                                <p>SAT</p>
+                                <i data-lucide="sun" class="w-6 h-6 my-1"></i>
+                                <p>38°C</p>
+                                <p class="text-gray-400">24°C</p>
+                            </div>
+                            <div class="flex flex-col items-center">
+                                <p>SUN</p>
+                                <i data-lucide="cloud-sun" class="w-6 h-6 my-1"></i>
+                                <p>35°C</p>
+                                <p class="text-gray-400">24°C</p>
+                            </div>
+                            <div class="flex flex-col items-center">
+                                <p>MON</p>
+                                <i data-lucide="cloud-drizzle" class="w-6 h-6 my-1"></i>
+                                <p>34°C</p>
+                                <p class="text-gray-400">21°C</p>
+                            </div>
+                            <div class="flex flex-col items-center">
+                                <p>TUE</p>
+                                <i data-lucide="cloud-lightning" class="w-6 h-6 my-1"></i>
+                                <p>31°C</p>
+                                <p class="text-gray-400">18°C</p>
+                            </div>
+                            <div class="flex flex-col items-center">
+                                <p>WED</p>
+                                <i data-lucide="cloud" class="w-6 h-6 my-1"></i>
+                                <p>29°C</p>
+                                <p class="text-gray-400">18°C</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Music Player -->
+                    <div class="widget">
+                        <div class="flex justify-between items-center mb-4">
+                            <div class="flex items-center gap-3">
+                                <i data-lucide="music-4" class="w-6 h-6 text-green-400"></i>
+                                <div>
+                                    <h3 class="text-lg">chill vibes</h3>
+                                    <p class="text-sm text-gray-400">lo-fi beats</p>
+                                </div>
+                            </div>
+                            <div class="flex gap-2">
+                                <button id="spotify-btn"
+                                    class="text-sm bg-[#1DB954]/80 text-white px-3 py-1 rounded hover:bg-[#1DB954] transition-colors">Spotify</button>
+                                <button id="yt-music-btn"
+                                    class="text-sm bg-[#FF0000]/80 text-white px-3 py-1 rounded hover:bg-[#FF0000] transition-colors">YT
+                                    Music</button>
+                            </div>
+                        </div>
+                        <div id="music-player-container" class="w-full h-96 mt-2">
+                            <!-- Music player content is managed by JavaScript -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right Column -->
+                <div class="lg:col-span-2 flex flex-col gap-6">
+                    <!-- Pixel Art GIFs -->
+                    <div class="flex justify-end items-start gap-2">
+                        <img src="/Sources/gifs/a4a6b0a531328e5d9c984a793fa1ac04.gif" alt="pixel art cactus"
+                            class="h-16" style="image-rendering: pixelated;">
+                        <img src="/Sources/gifs/795bdef79e87f2d391865c015fbbe950.jpg" alt="pixel art plant pot"
+                            class="h-16" style="image-rendering: pixelated;">
+                        <img src="/Sources/gifs/fc0f0994797c60813accf3c88591bcbf.gif" alt="pixel art succulent"
+                            class="h-16" style="image-rendering: pixelated;">
+                    </div>
+
+                    <!-- Assignments -->
+                    <div class="widget">
+                        <div class="flex justify-between items-center mb-3">
+                            <h2 class="text-xl flex items-center gap-2"><i data-lucide="clipboard-check"
+                                    class="w-5 h-5"></i> assignments</h2>
+                            <div class="flex items-center gap-2 text-sm text-gray-400">
+                                <span>Local</span>
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" id="storage-toggle" class="sr-only peer">
+                                    <div
+                                        class="w-11 h-6 bg-gray-600 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-green-500">
+                                    </div>
+                                </label>
+                                <span>Server</span>
+                            </div>
+                        </div>
+
+                        <div id="assignments-list" class="space-y-2">
+                            <div
+                                class="grid grid-cols-[auto,1fr,auto,auto,auto] gap-x-4 items-center text-sm text-gray-400 pb-1 border-b border-gray-600">
+                                <span></span>
+                                <span>Name</span>
+                                <span>Course</span>
+                                <span>Due Date</span>
+                                <span></span>
+                            </div>
+                            <!-- Dynamic tasks will be inserted here -->
+                        </div>
+                        <form id="new-assignment-form" class="mt-4 hidden">
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-2 text-base">
+                                <input type="text" id="new-assignment-name" placeholder="Task Name"
+                                    class="bg-[#2E3338] p-2 rounded border border-[#4A5568] focus:outline-none focus:ring-2 focus:ring-green-400"
+                                    required>
+                                <input type="text" id="new-assignment-course" placeholder="Course"
+                                    class="bg-[#2E3338] p-2 rounded border border-[#4A5568] focus:outline-none focus:ring-2 focus:ring-green-400">
+                                <input type="date" id="new-assignment-due-date"
+                                    class="bg-[#2E3338] p-2 rounded border border-[#4A5568] focus:outline-none focus:ring-2 focus:ring-green-400">
+                            </div>
+                            <div class="flex justify-end gap-2 mt-2">
+                                <button type="button" id="cancel-assignment-btn"
+                                    class="text-sm text-gray-400 hover:text-white px-3 py-1 rounded">Cancel</button>
+                                <button type="submit"
+                                    class="text-sm bg-green-500/80 text-white px-3 py-1 rounded hover:bg-green-600">Add
+                                    Task</button>
+                            </div>
+                        </form>
+                        <button id="new-assignment-btn"
+                            class="mt-4 text-gray-400 hover:text-white flex items-center gap-2"><i data-lucide="plus"
+                                class="w-4 h-4"></i> New</button>
+                    </div>
+
+                    <!-- User Health -->
+                    <div class="widget">
+                        <h2 class="text-xl mb-4 flex items-center gap-2"><i data-lucide="heart-pulse"
+                                class="w-5 h-5"></i> User Health</h2>
+                        <div id="health-stats-container"
+                            class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center items-start"
+                            style="min-height: 150px;">
+                            <!-- Health gauges will be injected here by JS -->
+                        </div>
+                        <div id="google-fit-auth-container" class="mt-8 text-center">
+                            <!-- This will show a login button or a sync message -->
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Peer Chat Window -->
+    <div id="chat-window"
+        class="fixed bottom-8 right-16 w-full max-w-md bg-[#39414A] rounded-lg shadow-2xl border border-[#4A5568] hidden flex flex-col z-20"
+        style="height: 500px;">
+        <!-- Header -->
+        <div class="flex justify-between items-center p-3 bg-[#2E3338] rounded-t-lg">
+            <div class="flex items-center gap-2">
+                <h3 id="chat-header-title" class="text-lg flex items-center gap-2"><i data-lucide="users"
+                        class="w-5 h-5"></i> Chat Room</h3>
+            </div>
+            <button id="chat-close-btn" class="text-gray-400 hover:text-white">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+        <!-- Messages -->
+        <div id="chat-messages" class="flex-1 p-4 overflow-y-auto space-y-4">
+            <!-- Messages from Firestore will be dynamically inserted here -->
+        </div>
+        <!-- Input -->
+        <div class="p-3 border-t border-[#4A5568]">
+            <div class="flex gap-2">
+                <input type="text" id="chat-input" placeholder="Type your message..."
+                    class="w-full bg-[#2E3338] p-2 rounded border border-[#4A5568] focus:outline-none focus:ring-2 focus:ring-green-400 text-base">
+                <button id="chat-send-btn"
+                    class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 flex items-center justify-center">
+                    <i data-lucide="send" class="w-5 h-5"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Chatbot Icon -->
+    <button id="ai-chat-toggle-btn"
+        class="fixed bottom-8 right-8 bg-blue-500 text-white p-4 rounded-full shadow-lg hover:bg-blue-600 transition-transform hover:scale-110 z-30">
+        <i data-lucide="bot" class="w-8 h-8"></i>
+    </button>
+
+    <!-- AI Chat Window -->
+    <div id="ai-chat-window"
+        class="fixed bottom-24 right-8 w-full max-w-md bg-[#39414A] rounded-lg shadow-2xl border border-[#4A5568] hidden flex flex-col z-30"
+        style="height: 500px;">
+        <div class="flex justify-between items-center p-3 bg-[#2E3338] rounded-t-lg">
+            <h3 class="text-lg flex items-center gap-2"><i data-lucide="bot" class="w-5 h-5"></i> AI Assistant</h3>
+            <div class="flex items-center gap-3">
+                <select id="ai-personality-selector"
+                    class="bg-[#39414A] text-sm rounded p-1 border border-[#4A5568] focus:outline-none text-white">
+                    <option value="helpful">Helpful</option>
+                    <option value="creative">Creative</option>
+                    <option value="sarcastic">Sarcastic</option>
+                </select>
+                <button id="ai-chat-clear-btn" title="Clear chat history" class="text-gray-400 hover:text-white">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                </button>
+                <button id="ai-chat-close-btn" class="text-gray-400 hover:text-white">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </div>
+        </div>
+        <div id="ai-chat-messages" class="flex-1 p-4 overflow-y-auto space-y-4"></div>
+        <div class="p-3 border-t border-[#4A5568]">
+            <div class="flex gap-2">
+                <input type="text" id="ai-chat-input" placeholder="Ask me anything..."
+                    class="w-full bg-[#2E3338] p-2 rounded border border-[#4A5568] focus:outline-none focus:ring-2 focus:ring-blue-400 text-base">
+                <button id="ai-chat-send-btn"
+                    class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 flex items-center justify-center">
+                    <i data-lucide="send" class="w-5 h-5"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Emote Picker Modal -->
+    <div id="emote-picker-modal"
+        class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center hidden z-50">
+        <div class="widget p-6 rounded-lg max-w-sm w-full">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl">Choose a new picture</h3>
+                <button id="close-emote-modal" class="text-gray-400 hover:text-white">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+            <div id="emote-grid" class="grid grid-cols-4 gap-4 text-4xl text-center">
+                <!-- Emotes will be populated by JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- SOS Sidebar -->
+    <div id="sos-sidebar"
+        class="fixed top-0 right-0 w-80 h-full bg-[#39414A]/80 backdrop-blur-lg border-l border-white/10 shadow-2xl z-50 transform translate-x-full transition-transform duration-300 ease-in-out">
+        <div class="p-4">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl flex items-center gap-2"><i data-lucide="life-buoy" class="w-5 h-5"></i> Emergency
+                    Support</h2>
+                <button id="close-sos-sidebar" class="text-gray-400 hover:text-white"><i data-lucide="x"
+                        class="w-6 h-6"></i></button>
+            </div>
+            <div class="space-y-3 text-lg">
+                <a href="#" class="flex items-center gap-3 p-3 rounded-lg hover:bg-white/10 transition-colors">
+                    <i data-lucide="phone" class="w-5 h-5"></i>
+                    <span>Contact Counsellor</span>
+                </a>
+                <a href="#" class="flex items-center gap-3 p-3 rounded-lg hover:bg-white/10 transition-colors">
+                    <i data-lucide="shield-half" class="w-5 h-5"></i>
+                    <span>Helplines</span>
+                </a>
+                <a href="#" class="flex items-center gap-3 p-3 rounded-lg hover:bg-white/10 transition-colors">
+                    <i data-lucide="sparkles" class="w-5 h-5"></i>
+                    <span>Quick Meditation</span>
+                </a>
+                <a href="#" class="flex items-center gap-3 p-3 rounded-lg hover:bg-white/10 transition-colors">
+                    <i data-lucide="wind" class="w-5 h-5"></i>
+                    <span>Breathing Exercise</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Journal Analysis Modal -->
+    <div id="journal-analysis-modal"
+        class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center hidden z-50">
+        <div class="widget p-6 rounded-lg max-w-xl w-full">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl flex items-center gap-2"><i data-lucide="brain-circuit" class="w-5 h-5"></i> AI
+                    Journal Analysis</h3>
+                <button id="close-journal-analysis-modal" class="text-gray-400 hover:text-white">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+            <div id="journal-analysis-content" class="gemini-response max-h-[60vh] overflow-y-auto">
+                <!-- AI analysis will be loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Study Help Modal -->
+    <div id="study-help-modal"
+        class="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center hidden z-50">
+        <div class="widget p-6 rounded-lg max-w-lg w-full flex flex-col" style="height: 70vh;">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl flex items-center gap-2"><i data-lucide="graduation-cap"
+                        class="w-5 h-5 text-yellow-400"></i> Study Help !!</h3>
+                <button id="close-study-help-modal" class="text-gray-400 hover:text-white">
+                    <i data-lucide="x" class="w-6 h-6"></i>
+                </button>
+            </div>
+            <div id="humata-upload-view" class="space-y-3 text-base">
+                <p class="text-sm text-gray-400">Upload a document to start a chat session.</p>
+                <label for="humata-file-upload"
+                    class="flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer bg-[#2E3338] border-gray-600 hover:border-gray-500 hover:bg-[#39414A]">
+                    <div class="flex flex-col items-center justify-center pt-5 pb-6">
+                        <i data-lucide="upload-cloud" class="w-10 h-10 mb-2 text-gray-400"></i>
+                        <p class="mb-1 text-sm text-gray-400"><span class="font-semibold">Click to upload</span></p>
+                        <p id="humata-file-name" class="text-xs text-gray-400">PDF, DOCX (MAX. 5MB)</p>
+                    </div>
+                    <input id="humata-file-upload" type="file" class="hidden" accept=".pdf,.docx" />
+                </label>
+            </div>
+            <div id="humata-chat-view" class="hidden flex-1 flex flex-col min-h-0">
+                <div class="flex justify-between items-center p-2 bg-black/20 rounded mb-2">
+                    <p id="humata-chat-file-name" class="text-sm truncate text-gray-300"></p>
+                    <button id="humata-end-chat-btn" class="text-xs text-red-400 hover:text-white">End Session</button>
+                </div>
+                <div id="humata-chat-messages" class="flex-1 p-4 overflow-y-auto space-y-4 bg-black/10 rounded">
+                    <!-- Humata chat messages will appear here -->
+                </div>
+                <div class="p-3 border-t border-[#4A5568] mt-2">
+                    <div class="flex gap-2">
+                        <input type="text" id="humata-chat-input" placeholder="Ask a follow-up..."
+                            class="w-full bg-[#2E3338] p-2 rounded border border-[#4A5568] focus:outline-none focus:ring-2 focus:ring-yellow-400 text-base">
+                        <button id="humata-chat-send-btn"
+                            class="bg-yellow-500 text-white px-4 py-2 rounded hover:bg-yellow-600 flex items-center justify-center">
+                            <i data-lucide="send" class="w-5 h-5"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <script type="module">
+        // --- API Keys ---
+        // IMPORTANT: Replace these placeholder values with your actual API keys.
+         const GIPHY_API_KEY = 'D25UbHQ9ZhdSwlwPPLWcc3WUXbS8vzd0'; 
+    
+        const GOOGLE_CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID_HERE';
+        const YOUTUBE_API_KEY = 'YOUR_YOUTUBE_API_KEY_HERE';
+
+
+        // --- Firebase Setup ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyCOveO-NFW_X5FkINfh5KMgCBBMlOej8M4",
+            authDomain: "student-dashboard-4ec02.firebaseapp.com",
+            projectId: "student-dashboard-4ec02",
+            storageBucket: "student-dashboard-4ec02.firebasestorage.app",
+            messagingSenderId: "250478137189",
+            appId: "1:250478137189:web:224352f8e017b4194edb8c",
+            measurementId: "G-K159S6DZNP"
+        };
+        const finalFirebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : firebaseConfig;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        const { initializeApp } = window.firebase;
+        const { getAuth, signInAnonymously, onAuthStateChanged } = window.firebase;
+        const { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, updateDoc, deleteDoc } = window.firebase;
+
+        let db, auth, currentUserId, currentUserAnonymousName;
+
+        function generateAnonymousName() {
+            const adjectives = ["Brave", "Silent", "Wise", "Wandering", "Gentle", "Hidden", "Cosmic", "Lunar", "Solar", "diated"];
+            const nouns = ["River", "Fox", "Oak", "Badger", "Starlight", "Meadow", "Whisper", "Dreamer", "Voyager", "Sprite"];
+            const adjective = adjectives[Math.floor(Math.random() * adjectives.length)];
+            const noun = nouns[Math.floor(Math.random() * nouns.length)];
+            return `${adjective} ${noun}`;
+        }
+
+        try {
+            const app = initializeApp(finalFirebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+        } catch (e) {
+            console.error("Firebase initialization failed. Chat features will be disabled.", e);
+        }
+
+        onAuthStateChanged(auth, user => {
+            if (user) {
+                currentUserId = user.uid;
+                let storedName = localStorage.getItem('anonymousUserName');
+                if (!storedName) {
+                    storedName = generateAnonymousName();
+                    localStorage.setItem('anonymousUserName', storedName);
+                }
+                currentUserAnonymousName = storedName;
+                console.log(`Authenticated as: ${currentUserAnonymousName} (${currentUserId})`);
+
+                const userNameElement = document.getElementById('user-anonymous-name');
+                if (userNameElement) {
+                    userNameElement.textContent = currentUserAnonymousName;
+                }
+
+                // Initialize features that depend on auth
+                initializeAssignments();
+                initializeJournaling();
+            } else {
+                signInAnonymously(auth).catch(error => {
+                    console.error("Anonymous sign-in failed:", error);
+                });
+            }
+        });
+
+        // Cover Image Handling
+        const coverElement = document.querySelector('.pixelated-bg');
+            const GIPHY_GIF_IDS = [
+            'HRXnPYf10Zx0wz4alF', // Default best
+            '6705G9I9sUcNCaJF10', // Pixel train through nature
+            'rzeWnbH8Uc5Y4', // Night castle
+            'TRebCjNbc4dIA',      // sky
+            'Basrh159dGwKY'  // Pixel night sky
+        ];
+
+        async function fetchAndSetCoverGif(apiKey, gifIds) {
+            const ids = gifIds.join(',');
+            const url = `https://api.giphy.com/v1/gifs?api_key=${apiKey}&ids=${ids}`;
+            try {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error(`Giphy API error: ${response.statusText}`);
+                const data = await response.json();
+                if (data.data && data.data.length > 0) {
+                    const randomIndex = Math.floor(Math.random() * data.data.length);
+                    coverElement.style.backgroundImage = `url('${data.data[randomIndex].images.original.url}')`;
+                }
+            } catch (error) {
+                console.error("Failed to fetch GIFs from Giphy:", error);
+                coverElement.style.backgroundImage = `url('https://placehold.co/1200x200/5B6F55/C2C2C2?text=Invalid+Giphy+Key')`;
+            }
+        }
+
+        function initializePage() {
+            if (GIPHY_API_KEY.includes('YOUR_')) {
+                coverElement.style.backgroundImage = `url('https://placehold.co/1200x200/5B6F55/C2C2C2?text=Add+Giphy+Key+in+Code')`;
+            } else {
+                fetchAndSetCoverGif(GIPHY_API_KEY, GIPHY_GIF_IDS);
+            }
+        }
+
+        // --- Gemini API Integration ---
+        const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent`;
+        const GEMINI_API_KEY = "";
+
+        async function getGeminiResponse(prompt, customSystemInstruction = null) {
+            const defaultSystemInstruction = "You are a helpful assistant. Important: You must not provide any medical, clinical, or therapeutic advice. Your goal is to be supportive and provide general information or creative ideas. If the user seems to be in distress or asks for advice related to health or mental well-being, you must gently decline and suggest they consult a qualified professional.";
+            try {
+                const payload = {
+                    contents: [{ parts: [{ text: prompt }] }],
+                    systemInstruction: { parts: [{ text: customSystemInstruction || defaultSystemInstruction }] },
+                };
+                const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!response.ok) throw new Error(`API error: ${response.statusText}`);
+                const result = await response.json();
+                return result.candidates?.[0]?.content?.parts?.[0]?.text || "No response found.";
+            } catch (error) {
+                console.error("Error calling Gemini API:", error);
+                return "Sorry, something went wrong.";
+            }
+        }
+
+        // --- Widget AI Assistant Logic ---
+        const geminiPromptInput = document.getElementById('gemini-prompt-input');
+        const geminiGenerateBtn = document.getElementById('gemini-generate-btn');
+        const geminiResponseContainer = document.getElementById('gemini-response-container');
+
+        geminiGenerateBtn.addEventListener('click', async () => {
+            const prompt = geminiPromptInput.value.trim();
+            if (prompt) {
+                geminiResponseContainer.innerHTML = '<div class="loader"></div>';
+                geminiGenerateBtn.disabled = true;
+                geminiResponseContainer.textContent = await getGeminiResponse(prompt);
+                geminiGenerateBtn.disabled = false;
+            }
+        });
+
+        // --- Quick Goal Logic ---
+        const quickGoalBtn = document.getElementById('quick-goal-btn');
+        const quickLinksList = document.getElementById('quick-links-list');
+
+        quickGoalBtn.addEventListener('click', async () => {
+            const prompt = "Generate a single, concise, and motivating personal goal.";
+            quickGoalBtn.disabled = true;
+            const newGoal = await getGeminiResponse(prompt);
+            const newListItem = document.createElement('li');
+            newListItem.innerHTML = `<a href="#" class="hover:text-green-400">✧ ${newGoal.replace(/['"]+/g, '')}</a>`;
+            quickLinksList.appendChild(newListItem);
+            quickGoalBtn.disabled = false;
+        });
+
+        // --- Peer Chat Logic ---
+        const chatWindow = document.getElementById('chat-window');
+        const chatCloseBtn = document.getElementById('chat-close-btn');
+        const chatMessages = document.getElementById('chat-messages');
+        const chatInput = document.getElementById('chat-input');
+        const chatSendBtn = document.getElementById('chat-send-btn');
+        const chatHeaderTitle = document.getElementById('chat-header-title');
+
+        let currentChatRoomId = null;
+        let unsubscribeFromMessages = null;
+
+        function joinChatRoom(roomId) {
+            if (unsubscribeFromMessages) {
+                unsubscribeFromMessages();
+            }
+
+            if (!currentUserId) {
+                console.warn("Auth not ready, user cannot join room yet.");
+                chatHeaderTitle.innerHTML = `<i data-lucide="loader" class="w-5 h-5 animate-spin"></i> Connecting...`;
+                chatMessages.innerHTML = `<div class="p-4 text-center text-gray-400">Please wait a moment for the connection to be established, then close this window and click the chat room again.</div>`;
+                chatWindow.classList.remove('hidden');
+                lucide.createIcons();
+                return;
+            }
+
+            currentChatRoomId = roomId.replace(/\s+/g, '-').toLowerCase();
+            chatHeaderTitle.innerHTML = `<i data-lucide="users" class="w-5 h-5"></i> ${roomId}`;
+            chatMessages.innerHTML = '';
+            chatWindow.classList.remove('hidden');
+            lucide.createIcons();
+
+            if (!db) {
+                chatMessages.innerHTML = '<div>Error: Chat database not connected.</div>';
+                return;
+            }
+
+            const messagesRef = collection(db, `artifacts/${appId}/public/data/chatrooms/${currentChatRoomId}/messages`);
+            const q = query(messagesRef, orderBy("createdAt"));
+
+            unsubscribeFromMessages = onSnapshot(q, (snapshot) => {
+                snapshot.docChanges().forEach((change) => {
+                    if (change.type === "added") {
+                        const messageData = change.doc.data();
+                        displayPeerChatMessage(messageData);
+                    }
+                });
+            }, (error) => {
+                console.error("Error listening to chat messages:", error);
+                chatMessages.innerHTML = '<div>Error loading messages. Please check permissions.</div>';
+            });
+        }
+
+        function displayPeerChatMessage(messageData) {
+            const isCurrentUser = messageData.senderId === currentUserId;
+            const messageContainer = document.createElement('div');
+            messageContainer.className = `chat-message ${isCurrentUser ? 'user' : 'other'}`;
+
+            const senderIdText = isCurrentUser ? 'You' : messageData.senderName || `User ${messageData.senderId.substring(0, 6)}...`;
+            const senderIdTitle = isCurrentUser ? `You (${currentUserAnonymousName})` : `${messageData.senderName} (${messageData.senderId})`;
+
+            messageContainer.innerHTML = `
+                <div class="flex flex-col ${isCurrentUser ? 'items-end' : 'items-start'}">
+                    <div class="chat-sender-id" title="${senderIdTitle}">${senderIdText}</div>
+                    <div class="chat-bubble ${isCurrentUser ? 'user' : 'other-user'}">${messageData.text}</div>
+                </div>
+            `;
+
+            chatMessages.appendChild(messageContainer);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        async function handlePeerSendMessage() {
+            const userInput = chatInput.value.trim();
+            if (!userInput || !currentChatRoomId || !currentUserId || !db) return;
+
+            const messagesRef = collection(db, `artifacts/${appId}/public/data/chatrooms/${currentChatRoomId}/messages`);
+
+            try {
+                await addDoc(messagesRef, {
+                    text: userInput,
+                    senderId: currentUserId,
+                    senderName: currentUserAnonymousName,
+                    createdAt: serverTimestamp()
+                });
+                chatInput.value = '';
+            } catch (error) {
+                console.error("Error sending message:", error);
+            }
+        }
+
+        chatCloseBtn.addEventListener('click', () => {
+            chatWindow.classList.add('hidden');
+            if (unsubscribeFromMessages) {
+                unsubscribeFromMessages();
+                unsubscribeFromMessages = null;
+            }
+            currentChatRoomId = null;
+        });
+
+        chatSendBtn.addEventListener('click', handlePeerSendMessage);
+        chatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') handlePeerSendMessage();
+        });
+
+        // --- AI Chatbot with Personalities Logic ---
+        const aiChatToggleBtn = document.getElementById('ai-chat-toggle-btn');
+        const aiChatWindow = document.getElementById('ai-chat-window');
+        const aiChatCloseBtn = document.getElementById('ai-chat-close-btn');
+        const aiChatClearBtn = document.getElementById('ai-chat-clear-btn');
+        const aiChatMessages = document.getElementById('ai-chat-messages');
+        const aiChatInput = document.getElementById('ai-chat-input');
+        const aiChatSendBtn = document.getElementById('ai-chat-send-btn');
+        const aiPersonalitySelector = document.getElementById('ai-personality-selector');
+        let aiChatHistory = [];
+
+        async function getGeminiResponseWithPersonality(prompt, history, personality) {
+            const personalityPrompts = {
+                helpful: "You are a helpful and friendly assistant. You are concise and to the point. You are here to help the user with their tasks.",
+                creative: "You are a creative muse. You think outside the box and provide imaginative and inspiring ideas. You speak in a poetic and slightly eccentric way.",
+                sarcastic: "You are a sarcastic, witty bot. You answer questions correctly but with a dry sense of humor and a bit of sass. You're not mean, just amusingly unimpressed."
+            };
+            const safetyDisclaimer = "\n\n**Important Disclaimer:** You are an AI assistant and not a medical professional. You must not provide any medical, clinical, or therapeutic advice. If a user is in crisis or needs mental health support, you must advise them to contact a qualified professional or a crisis hotline immediately.";
+            const systemPrompt = (personalityPrompts[personality] || personalityPrompts['helpful']) + safetyDisclaimer;
+
+            const contents = history.map(msg => ({
+                role: msg.sender === 'user' ? 'user' : 'model',
+                parts: [{ text: msg.text }]
+            }));
+            contents.push({ role: 'user', parts: [{ text: prompt }] });
+
+            try {
+                const payload = {
+                    contents: contents,
+                    systemInstruction: { parts: [{ text: systemPrompt }] },
+                };
+                const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!response.ok) throw new Error(`API error: ${response.statusText}`);
+                const result = await response.json();
+                return result.candidates?.[0]?.content?.parts?.[0]?.text || "I'm not sure how to respond to that.";
+            } catch (error) {
+                console.error("Error calling Gemini API:", error);
+                return "Sorry, I'm having trouble connecting right now.";
+            }
+        }
+
+        function displayAiChatMessage(text, sender, save = true) {
+            const messageContainer = document.createElement('div');
+            messageContainer.className = `chat-message ${sender}`;
+            const bubble = document.createElement('div');
+            bubble.className = `chat-bubble ${sender}`;
+            bubble.textContent = text;
+            messageContainer.appendChild(bubble);
+            aiChatMessages.appendChild(messageContainer);
+            aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+
+            if (save) {
+                aiChatHistory.push({ sender, text });
+                localStorage.setItem('aiChatHistory', JSON.stringify(aiChatHistory));
+            }
+        }
+
+        async function handleAiSendMessage() {
+            const userInput = aiChatInput.value.trim();
+            if (!userInput) return;
+
+            displayAiChatMessage(userInput, 'user');
+            aiChatInput.value = '';
+            aiChatSendBtn.disabled = true;
+
+            const typingIndicator = document.createElement('div');
+            typingIndicator.id = 'ai-typing-indicator';
+            typingIndicator.className = 'chat-message ai';
+            typingIndicator.innerHTML = `<div class="chat-bubble ai"><div class="loader" style="width:20px; height:20px; margin:0;"></div></div>`;
+            aiChatMessages.appendChild(typingIndicator);
+            aiChatMessages.scrollTop = aiChatMessages.scrollHeight;
+
+            const personality = aiPersonalitySelector.value;
+            const aiResponse = await getGeminiResponseWithPersonality(userInput, aiChatHistory, personality);
+
+            document.getElementById('ai-typing-indicator').remove();
+            aiChatSendBtn.disabled = false;
+            displayAiChatMessage(aiResponse, 'ai');
+        }
+
+        function loadAiChatHistory() {
+            const savedHistory = localStorage.getItem('aiChatHistory');
+            if (savedHistory && JSON.parse(savedHistory).length > 0) {
+                aiChatHistory = JSON.parse(savedHistory);
+                aiChatMessages.innerHTML = '';
+                aiChatHistory.forEach(msg => displayAiChatMessage(msg.text, msg.sender, false));
+            } else {
+                aiChatHistory = [];
+                displayAiChatMessage("Hello! How can I help you today?", 'ai', false);
+            }
+        }
+
+        aiChatToggleBtn.addEventListener('click', () => {
+            aiChatWindow.classList.toggle('hidden');
+            chatWindow.classList.add('hidden'); // Hide peer chat if open
+            lucide.createIcons();
+        });
+        aiChatCloseBtn.addEventListener('click', () => aiChatWindow.classList.add('hidden'));
+        aiChatSendBtn.addEventListener('click', handleAiSendMessage);
+        aiChatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') handleAiSendMessage();
+        });
+
+        aiChatClearBtn.addEventListener('click', () => {
+            aiChatHistory = [];
+            localStorage.removeItem('aiChatHistory');
+            aiChatMessages.innerHTML = '';
+            displayAiChatMessage("Hello! How can I help you today?", 'ai', false);
+        });
+
+
+        // --- Profile Picture Logic ---
+        const profilePicContainer = document.getElementById('profile-pic-container');
+        const profilePicEmoji = document.getElementById('profile-pic-emoji');
+        const emotePickerModal = document.getElementById('emote-picker-modal');
+        const closeEmoteModalBtn = document.getElementById('close-emote-modal');
+        const emoteGrid = document.getElementById('emote-grid');
+        const availableEmotes = ['☘️', '🌸', '🍓', '🍄', '✨', '🌙', '🪐', '🦊', '🐸', '🐢', '🦋', '⭐'];
+
+        function populateEmotePicker() {
+            emoteGrid.innerHTML = '';
+            availableEmotes.forEach(emote => {
+                const button = document.createElement('button');
+                button.className = 'p-2 rounded-lg hover:bg-white/10 transition-colors';
+                button.textContent = emote;
+                emoteGrid.appendChild(button);
+            });
+        }
+
+        profilePicContainer.addEventListener('click', () => emotePickerModal.classList.remove('hidden'));
+        closeEmoteModalBtn.addEventListener('click', () => emotePickerModal.classList.add('hidden'));
+        emotePickerModal.addEventListener('click', (e) => { if (e.target === emotePickerModal) emotePickerModal.classList.add('hidden'); });
+        emoteGrid.addEventListener('click', (e) => {
+            if (e.target.tagName === 'BUTTON') {
+                const newEmote = e.target.textContent;
+                profilePicEmoji.textContent = newEmote;
+                localStorage.setItem('dashboardProfilePic', newEmote);
+                emotePickerModal.classList.add('hidden');
+            }
+        });
+
+        function loadProfilePic() {
+            const savedEmote = localStorage.getItem('dashboardProfilePic');
+            if (savedEmote) profilePicEmoji.textContent = savedEmote;
+        }
+
+        function initializeMusicPlayer() {
+            const spotifyBtn = document.getElementById('spotify-btn');
+            const ytMusicBtn = document.getElementById('yt-music-btn');
+            const musicPlayerContainer = document.getElementById('music-player-container');
+
+            const SPOTIFY_EMBED_URL = 'https://open.spotify.com/embed/playlist/37i9dQZF1DWWQRwui02dT8';
+            const YOUTUBE_DEFAULT_EMBED_URL = 'https://www.youtube.com/embed/videoseries?list=RDCLAK5uy_l3q3V2I_gCls-0pso33pQz2v-2dGPlwzg';
+            let tokenClient, gapiInited = false, gsiInited = false;
+
+            function loadGapiScript() {
+                const script = document.createElement('script');
+                script.src = 'https://apis.google.com/js/api.js';
+                script.onload = initializeGapiClient;
+                document.body.appendChild(script);
+            }
+
+            function initializeGapiClient() {
+                if (YOUTUBE_API_KEY.includes('YOUR_')) {
+                    musicPlayerContainer.innerHTML = `<div class="flex items-center justify-center h-full text-center text-gray-400 p-4">Please add your YouTube API Key in the code.</div>`;
+                    return;
+                };
+                gapi.load('client', async () => {
+                    try {
+                        await gapi.client.init({ apiKey: YOUTUBE_API_KEY, discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/youtube/v3/rest'] });
+                        gapiInited = true;
+                    } catch (error) {
+                        console.error("GAPI client init error:", error);
+                        musicPlayerContainer.innerHTML = `<div class="flex items-center justify-center h-full text-center text-gray-400 p-4">Error: Invalid YouTube API Key.</div>`;
+                    }
+                });
+            }
+
+            if (typeof google !== 'undefined') {
+                tokenClient = google.accounts.oauth2.initTokenClient({ client_id: GOOGLE_CLIENT_ID, scope: 'https://www.googleapis.com/auth/youtube.readonly', callback: handleAuthResponse });
+                gsiInited = true;
+                loadGapiScript();
+            } else {
+                console.error("Google GSI script not loaded.");
+            }
+
+            async function handleAuthResponse(tokenResponse) {
+                if (tokenResponse.access_token) {
+                    gapi.client.setToken(tokenResponse);
+                    await fetchAndDisplayPlaylists();
+                }
+            }
+            function handleYtLogin() {
+                if (GOOGLE_CLIENT_ID.includes('YOUR_') || YOUTUBE_API_KEY.includes('YOUR_')) {
+                    musicPlayerContainer.innerHTML = `<div class="flex items-center justify-center h-full text-center text-gray-400 p-4">Please add Google Client ID & YouTube API Key in the code.</div>`;
+                    return;
+                }
+                if (gapiInited && gsiInited) tokenClient.requestAccessToken({ prompt: 'consent' });
+            }
+            function handleLogout() {
+                gapi.client.setToken(null);
+                renderDefaultYtPlayer();
+            }
+            async function fetchAndDisplayPlaylists() {
+                musicPlayerContainer.innerHTML = '<div class="loader mx-auto mt-16"></div>';
+                try {
+                    const response = await gapi.client.youtube.playlists.list({ part: 'snippet', mine: true, maxResults: 50 });
+                    if (response.result.items && response.result.items.length > 0) {
+                        renderUserPlaylists(response.result.items);
+                    } else {
+                        musicPlayerContainer.innerHTML = `<div class="text-center p-4">No playlists found. <button id="yt-logout-btn" class="text-sm text-red-400 hover:text-white block mx-auto mt-2">Logout</button></div>`;
+                        document.getElementById('yt-logout-btn').addEventListener('click', handleLogout);
+                    }
+                } catch (err) {
+                    console.error("Error fetching playlists:", err);
+                    musicPlayerContainer.innerHTML = `<div class="text-center p-4">Could not fetch playlists.</div> <button id="yt-login-btn-retry" class="mx-auto block bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">Login Again</button>`;
+                    document.getElementById('yt-login-btn-retry').addEventListener('click', handleYtLogin);
+                }
+            }
+            function renderUserPlaylists(playlists) {
+                const defaultPlaylistId = playlists[0].id;
+                musicPlayerContainer.innerHTML = `
+                    <div class="flex flex-col h-full">
+                        <div class="w-full h-3/5"> <iframe id="music-player-iframe" class="rounded-t-lg w-full h-full" src="https://www.youtube.com/embed/videoseries?list=${defaultPlaylistId}" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe> </div>
+                        <div class="flex-1 flex flex-col bg-black/20 rounded-b-lg">
+                            <div class="flex justify-between items-center p-2 border-b border-white/10"> <h4 class="font-bold text-base">Your Playlists</h4> <button id="yt-logout-btn" class="text-xs text-gray-400 hover:text-white">Logout</button> </div>
+                            <div id="yt-playlist-list" class="flex-1 overflow-y-auto p-1">${playlists.map(p => `<button class="yt-playlist-item w-full text-left p-2 hover:bg-white/10 rounded text-sm" data-playlist-id="${p.id}">${p.snippet.title}</button>`).join('')}</div>
+                        </div>
+                    </div>`;
+                document.getElementById('yt-logout-btn').addEventListener('click', handleLogout);
+                document.querySelectorAll('.yt-playlist-item').forEach(item => {
+                    item.addEventListener('click', () => { document.getElementById('music-player-iframe').src = `https://www.youtube.com/embed/videoseries?list=${item.dataset.playlistId}`; });
+                });
+            }
+            function renderSpotifyPlayer() {
+                musicPlayerContainer.innerHTML = `<iframe class="rounded-lg w-full h-full" src="${SPOTIFY_EMBED_URL}" title="Spotify Playlist" frameborder="0" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>`;
+                ytMusicBtn.classList.remove('ring-2', 'ring-white');
+                spotifyBtn.classList.add('ring-2', 'ring-white');
+            }
+            function renderDefaultYtPlayer() {
+                musicPlayerContainer.innerHTML = `<div class="flex flex-col items-center justify-center h-full gap-4"> <iframe class="rounded-lg w-full h-4/5" src="${YOUTUBE_DEFAULT_EMBED_URL}" title="lofi hip hop radio" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe> <button id="yt-login-btn" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">Sync YouTube Music</button> </div>`;
+                document.getElementById('yt-login-btn').addEventListener('click', handleYtLogin);
+                spotifyBtn.classList.remove('ring-2', 'ring-white');
+                ytMusicBtn.classList.add('ring-2', 'ring-white');
+            }
+
+            spotifyBtn.addEventListener('click', renderSpotifyPlayer);
+            ytMusicBtn.addEventListener('click', renderDefaultYtPlayer);
+            renderDefaultYtPlayer();
+        }
+
+        // --- Assignments Logic ---
+        const assignmentsList = document.getElementById('assignments-list');
+        const newAssignmentBtn = document.getElementById('new-assignment-btn');
+        const newAssignmentForm = document.getElementById('new-assignment-form');
+        const cancelAssignmentBtn = document.getElementById('cancel-assignment-btn');
+        const storageToggle = document.getElementById('storage-toggle');
+
+        let assignmentStorageMode = localStorage.getItem('assignmentStorageMode') || 'server';
+        let unsubscribeFromAssignments = null;
+
+        function clearAssignmentsList() {
+            while (assignmentsList.children.length > 1) {
+                assignmentsList.removeChild(assignmentsList.lastChild);
+            }
+        }
+
+        function renderAssignment(data, id) {
+            const item = document.createElement('div');
+            item.className = `task-item grid grid-cols-[auto,1fr,auto,auto,auto] gap-x-4 items-center ${data.completed ? 'completed' : ''}`;
+            item.dataset.id = id;
+
+            item.innerHTML = `
+                <input type="checkbox" class="task-checkbox" ${data.completed ? 'checked' : ''}>
+                <span>${data.name}</span>
+                <span class="course-tag" style="background-color: ${getCourseColor(data.course)}">${data.course || 'General'}</span>
+                <span>${data.dueDate ? new Date(data.dueDate).toLocaleDateString() : 'No date'}</span>
+                <button class="delete-assignment-btn text-gray-500 hover:text-red-400"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+            `;
+
+            assignmentsList.appendChild(item);
+            lucide.createIcons();
+        }
+
+        function getCourseColor(course) {
+            let hash = 0;
+            for (let i = 0; i < (course || '').length; i++) {
+                hash = course.charCodeAt(i) + ((hash << 5) - hash);
+            }
+            const color = `hsl(${hash % 360}, 50%, 60%)`;
+            return color;
+        }
+
+        function initializeAssignments() {
+            clearAssignmentsList();
+            if (unsubscribeFromAssignments) {
+                unsubscribeFromAssignments();
+                unsubscribeFromAssignments = null;
+            }
+
+            if (assignmentStorageMode === 'server') {
+                initializeFirestoreAssignments();
+            } else {
+                initializeLocalAssignments();
+            }
+            storageToggle.checked = assignmentStorageMode === 'server';
+        }
+
+        function initializeFirestoreAssignments() {
+            if (!db || !currentUserId) {
+                console.error("Firestore not initialized or user not authenticated.");
+                return;
+            }
+            const assignmentsRef = collection(db, `artifacts/${appId}/public/data/assignments`);
+            const q = query(assignmentsRef, orderBy("createdAt", "desc"));
+
+            unsubscribeFromAssignments = onSnapshot(q, (snapshot) => {
+                clearAssignmentsList();
+                snapshot.forEach(doc => {
+                    renderAssignment(doc.data(), doc.id);
+                });
+            }, (error) => {
+                console.error("Error getting assignments:", error);
+                clearAssignmentsList();
+                const errorItem = document.createElement('div');
+                errorItem.className = 'text-center text-red-400 p-4 col-span-full';
+                errorItem.textContent = 'Error: Could not load assignments. Check Firestore rules.';
+                assignmentsList.appendChild(errorItem);
+            });
+        }
+
+        function initializeLocalAssignments() {
+            const localTasks = JSON.parse(localStorage.getItem('localAssignments')) || [];
+            clearAssignmentsList();
+            localTasks.forEach(task => renderAssignment(task, task.id));
+        }
+
+        storageToggle.addEventListener('change', () => {
+            assignmentStorageMode = storageToggle.checked ? 'server' : 'local';
+            localStorage.setItem('assignmentStorageMode', assignmentStorageMode);
+            initializeAssignments();
+        });
+
+        newAssignmentBtn.addEventListener('click', () => {
+            newAssignmentForm.classList.remove('hidden');
+            newAssignmentBtn.classList.add('hidden');
+        });
+
+        cancelAssignmentBtn.addEventListener('click', () => {
+            newAssignmentForm.classList.add('hidden');
+            newAssignmentBtn.classList.remove('hidden');
+            newAssignmentForm.reset();
+        });
+
+        newAssignmentForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('new-assignment-name').value.trim();
+            const course = document.getElementById('new-assignment-course').value.trim();
+            const dueDate = document.getElementById('new-assignment-due-date').value;
+
+            if (!name) return;
+
+            if (assignmentStorageMode === 'server') {
+                if (!db) return;
+                await addDoc(collection(db, `artifacts/${appId}/public/data/assignments`), {
+                    name, course, dueDate, completed: false, createdAt: serverTimestamp()
+                });
+            } else {
+                const localTasks = JSON.parse(localStorage.getItem('localAssignments')) || [];
+                const newTask = {
+                    id: Date.now().toString(), name, course, dueDate, completed: false, createdAt: new Date().toISOString()
+                };
+                localTasks.push(newTask);
+                localStorage.setItem('localAssignments', JSON.stringify(localTasks));
+                initializeLocalAssignments();
+            }
+
+            newAssignmentForm.reset();
+            newAssignmentForm.classList.add('hidden');
+            newAssignmentBtn.classList.remove('hidden');
+        });
+
+        assignmentsList.addEventListener('click', async (e) => {
+            const target = e.target;
+            const taskItem = target.closest('.task-item');
+            if (!taskItem) return;
+            const id = taskItem.dataset.id;
+
+            if (assignmentStorageMode === 'server') {
+                if (!db) return;
+                const docRef = doc(db, `artifacts/${appId}/public/data/assignments`, id);
+                if (target.matches('.task-checkbox')) {
+                    await updateDoc(docRef, { completed: target.checked });
+                }
+                if (target.closest('.delete-assignment-btn')) {
+                    await deleteDoc(docRef);
+                }
+            } else {
+                let localTasks = JSON.parse(localStorage.getItem('localAssignments')) || [];
+                if (target.matches('.task-checkbox')) {
+                    const taskIndex = localTasks.findIndex(t => t.id === id);
+                    if (taskIndex > -1) {
+                        localTasks[taskIndex].completed = target.checked;
+                    }
+                }
+                if (target.closest('.delete-assignment-btn')) {
+                    localTasks = localTasks.filter(t => t.id !== id);
+                }
+                localStorage.setItem('localAssignments', JSON.stringify(localTasks));
+                initializeLocalAssignments();
+            }
+        });
+
+        // --- User Health Logic ---
+        const healthStatsContainer = document.getElementById('health-stats-container');
+        const googleFitAuthContainer = document.getElementById('google-fit-auth-container');
+        let fitTokenClient;
+
+        function renderHealthGauge(id, label, value, goal) {
+            const percent = Math.min((value / goal) * 100, 100);
+            const angle = (percent / 100) * 180 - 90; // -90 to 90 degrees
+
+            const gaugeHTML = `
+                <div class="flex flex-col items-center">
+                    <div class="health-gauge">
+                        <div class="gauge-arc">
+                            <div class="gauge-arc-segments">
+                                <div class="gauge-arc-mask"></div>
+                            </div>
+                        </div>
+                        <div class="gauge-needle-container" style="--needle-angle: ${angle}deg;">
+                            <div class="gauge-needle"></div>
+                        </div>
+                    </div>
+                    <div class="gauge-text">
+                        <span class="gauge-value">${value.toLocaleString()}</span>
+                        <span class="gauge-label">${label}</span>
+                    </div>
+                </div>
+            `;
+            const gaugeElement = document.createElement('div');
+            gaugeElement.innerHTML = gaugeHTML;
+            return gaugeElement;
+        }
+
+
+        function displayDummyHealthData() {
+            healthStatsContainer.innerHTML = ''; // Clear previous
+            healthStatsContainer.appendChild(renderHealthGauge('steps', 'Steps', 7543, 10000));
+            healthStatsContainer.appendChild(renderHealthGauge('heart', 'BPM', 68, 120));
+            healthStatsContainer.appendChild(renderHealthGauge('sleep', 'Hours', 7.5, 8));
+        }
+
+        function initializeHealthWidget() {
+            // For now, always show dummy data.
+            // In a real scenario, you'd check for a valid token first.
+            displayDummyHealthData();
+
+            // Display login button
+            if (GOOGLE_CLIENT_ID.includes('YOUR_')) {
+                googleFitAuthContainer.innerHTML = `<p class="text-sm text-gray-400">Add Google Client ID in code to connect.</p>`;
+            } else {
+                googleFitAuthContainer.innerHTML = `<button id="google-fit-login-btn" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Connect Google Fit</button>`;
+                document.getElementById('google-fit-login-btn').addEventListener('click', handleFitLogin);
+            }
+        }
+
+        function handleFitLogin() {
+            if (typeof google === 'undefined') {
+                alert("Google scripts not loaded yet. Please try again.");
+                return;
+            }
+            // Initialize a new token client specifically for Fit scopes
+            fitTokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: GOOGLE_CLIENT_ID,
+                scope: 'https://www.googleapis.com/auth/fitness.activity.read https://www.googleapis.com/auth/fitness.heart_rate.read https://www.googleapis.com/auth/fitness.sleep.read',
+                callback: handleFitAuthResponse,
+            });
+            fitTokenClient.requestAccessToken({ prompt: 'consent' });
+        }
+
+        async function handleFitAuthResponse(tokenResponse) {
+            if (tokenResponse.access_token) {
+                googleFitAuthContainer.innerHTML = `<p class="text-sm text-green-400">Google Fit Connected!</p>`;
+                // TODO: Add functions here to fetch and display real data
+                // e.g., fetchStepsData(tokenResponse.access_token);
+            } else {
+                googleFitAuthContainer.innerHTML = `<p class="text-sm text-red-400">Failed to connect Google Fit.</p>`;
+            }
+        }
+
+        // --- Journaling Logic ---
+        const shadowWorkPromptBtn = document.getElementById('shadow-work-prompt-btn');
+        const journalEntryTextarea = document.getElementById('journal-entry');
+        const saveJournalEntryBtn = document.getElementById('save-journal-entry-btn');
+        const journalHistoryList = document.getElementById('journal-history-list');
+        const journalStorageToggle = document.getElementById('journal-storage-toggle');
+        const journalAnalysisModal = document.getElementById('journal-analysis-modal');
+        const closeJournalAnalysisModal = document.getElementById('close-journal-analysis-modal');
+        const journalAnalysisContent = document.getElementById('journal-analysis-content');
+
+        let journalStorageMode = localStorage.getItem('journalStorageMode') || 'server';
+        let unsubscribeFromJournal = null;
+
+        function initializeJournaling() {
+            if (unsubscribeFromJournal) unsubscribeFromJournal();
+            journalHistoryList.innerHTML = '';
+
+            if (journalStorageMode === 'server') {
+                initializeFirestoreJournal();
+            } else {
+                initializeLocalJournal();
+            }
+            journalStorageToggle.checked = journalStorageMode === 'server';
+        }
+
+        function initializeFirestoreJournal() {
+            if (!db || !currentUserId) return;
+            const journalRef = collection(db, `artifacts/${appId}/public/data/journal`);
+            const q = query(journalRef, orderBy("createdAt", "desc"));
+            unsubscribeFromJournal = onSnapshot(q, snapshot => {
+                journalHistoryList.innerHTML = '';
+                snapshot.forEach(doc => renderJournalHistoryItem(doc.data(), doc.id));
+            });
+        }
+
+        function initializeLocalJournal() {
+            const entries = JSON.parse(localStorage.getItem('localJournalEntries')) || [];
+            journalHistoryList.innerHTML = '';
+            entries.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).forEach(entry => renderJournalHistoryItem(entry, entry.id));
+        }
+
+        function renderJournalHistoryItem(data, id) {
+            const item = document.createElement('div');
+            item.className = 'journal-entry-item p-2 rounded hover:bg-white/10 flex justify-between items-center';
+            item.dataset.id = id;
+            item.dataset.entryText = data.entry;
+
+            const date = data.createdAt?.toDate ? data.createdAt.toDate() : new Date(data.createdAt);
+            const dateString = date.toLocaleDateString();
+
+            item.innerHTML = `
+                <div>
+                    <span class="font-bold">${dateString}</span>
+                    <p class="text-sm text-gray-400 truncate">${data.entry.substring(0, 30)}...</p>
+                </div>
+                <button class="analyze-journal-btn text-purple-400 hover:text-purple-300" title="Analyze with AI"><i data-lucide="brain-circuit" class="w-4 h-4"></i></button>
+            `;
+            journalHistoryList.appendChild(item);
+            lucide.createIcons();
+
+            item.querySelector('.analyze-journal-btn').addEventListener('click', (e) => {
+                e.stopPropagation();
+                handleJournalAnalysis(data.entry);
+            });
+
+            item.addEventListener('click', () => {
+                journalEntryTextarea.value = data.entry;
+            });
+        }
+
+        async function handleJournalAnalysis(entryText) {
+            journalAnalysisModal.classList.remove('hidden');
+            journalAnalysisContent.innerHTML = '<div class="loader"></div>';
+            const prompt = `Analyze this journal entry. Here is the entry: "${entryText}"`;
+            const systemInstruction = "You are an AI assistant for self-reflection. Your role is to analyze a journal entry from a compassionate, neutral, and insightful perspective. Identify potential underlying themes, emotions, or thought patterns. Frame your response as gentle observations or reflective questions to encourage deeper thought. **Crucially, you must not provide any form of medical, clinical, psychological, or therapeutic advice, diagnosis, or treatment plan.** You are not a healthcare professional. If the entry mentions suicidal ideation, self-harm, or severe distress, your primary response must be to provide a disclaimer advising the user to seek immediate help from a crisis hotline or a qualified mental health professional.";
+
+            const analysis = await getGeminiResponse(prompt, systemInstruction);
+            journalAnalysisContent.textContent = analysis;
+        }
+
+        closeJournalAnalysisModal.addEventListener('click', () => journalAnalysisModal.classList.add('hidden'));
+        journalAnalysisModal.addEventListener('click', (e) => {
+            if (e.target === journalAnalysisModal) journalAnalysisModal.classList.add('hidden');
+        });
+
+
+        journalStorageToggle.addEventListener('change', () => {
+            journalStorageMode = journalStorageToggle.checked ? 'server' : 'local';
+            localStorage.setItem('journalStorageMode', journalStorageMode);
+            initializeJournaling();
+        });
+
+        shadowWorkPromptBtn.addEventListener('click', async () => {
+            const prompt = "Generate a single, deep, and introspective shadow work prompt. It should be a question that encourages self-reflection on difficult or hidden aspects of the self.";
+            shadowWorkPromptBtn.disabled = true;
+            shadowWorkPromptBtn.textContent = 'Generating...';
+            const shadowPrompt = await getGeminiResponse(prompt);
+            journalEntryTextarea.value = shadowPrompt.replace(/['"]+/g, '');
+            shadowWorkPromptBtn.disabled = false;
+            shadowWorkPromptBtn.textContent = '🔮 New Shadow Work Prompt';
+        });
+
+        saveJournalEntryBtn.addEventListener('click', async () => {
+            const entryText = journalEntryTextarea.value.trim();
+            if (!entryText) return;
+
+            if (journalStorageMode === 'server') {
+                if (!db || !currentUserId) {
+                    alert("Cannot save entry. Connection not established."); return;
+                }
+                try {
+                    await addDoc(collection(db, `artifacts/${appId}/public/data/journal`), {
+                        entry: entryText, createdAt: serverTimestamp(), userId: currentUserId
+                    });
+                } catch (error) {
+                    console.error("Error saving journal entry:", error);
+                    alert("Could not save entry. Check your Firestore rules.");
+                }
+            } else {
+                const localEntries = JSON.parse(localStorage.getItem('localJournalEntries')) || [];
+                const newEntry = {
+                    id: Date.now().toString(), entry: entryText, createdAt: new Date().toISOString()
+                };
+                localEntries.push(newEntry);
+                localStorage.setItem('localJournalEntries', JSON.stringify(localEntries));
+                initializeLocalJournal();
+            }
+
+            journalEntryTextarea.value = '';
+            saveJournalEntryBtn.textContent = 'Saved!';
+            setTimeout(() => { saveJournalEntryBtn.textContent = 'Save Entry'; }, 2000);
+        });
+
+        // --- Humata.ai Logic (Placeholder) ---
+        const studyHelpBtn = document.getElementById('study-help-btn');
+        const studyHelpModal = document.getElementById('study-help-modal');
+        const closeStudyHelpModal = document.getElementById('close-study-help-modal');
+        const humataFileUpload = document.getElementById('humata-file-upload');
+        const humataFileName = document.getElementById('humata-file-name');
+
+        const humataUploadView = document.getElementById('humata-upload-view');
+        const humataChatView = document.getElementById('humata-chat-view');
+        const humataChatFileName = document.getElementById('humata-chat-file-name');
+        const humataEndChatBtn = document.getElementById('humata-end-chat-btn');
+        const humataChatMessages = document.getElementById('humata-chat-messages');
+        const humataChatInput = document.getElementById('humata-chat-input');
+        const humataChatSendBtn = document.getElementById('humata-chat-send-btn');
+
+        let uploadedFile = null;
+
+        function resetHumataModal() {
+            humataUploadView.classList.remove('hidden');
+            humataChatView.classList.add('hidden');
+            humataChatMessages.innerHTML = '';
+            humataChatInput.value = '';
+            humataFileName.textContent = 'PDF, DOCX (MAX. 5MB)';
+            uploadedFile = null;
+        }
+
+        studyHelpBtn.addEventListener('click', () => {
+            studyHelpModal.classList.remove('hidden');
+            lucide.createIcons();
+        });
+        closeStudyHelpModal.addEventListener('click', () => {
+            studyHelpModal.classList.add('hidden');
+            resetHumataModal();
+        });
+        studyHelpModal.addEventListener('click', (e) => {
+            if (e.target === studyHelpModal) {
+                studyHelpModal.classList.add('hidden');
+                resetHumataModal();
+            }
+        });
+
+        humataFileUpload.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                uploadedFile = e.target.files[0];
+                humataUploadView.classList.add('hidden');
+                humataChatView.classList.remove('hidden');
+                humataChatFileName.textContent = uploadedFile.name;
+                displayHumataChatMessage(`File "${uploadedFile.name}" uploaded. What would you like to know?`, 'ai');
+            }
+        });
+
+        humataEndChatBtn.addEventListener('click', resetHumataModal);
+
+        function displayHumataChatMessage(text, sender) {
+            const messageContainer = document.createElement('div');
+            messageContainer.className = `chat-message ${sender}`;
+            const bubble = document.createElement('div');
+            bubble.className = `chat-bubble ${sender === 'user' ? 'user' : 'ai'}`;
+            bubble.textContent = text;
+            messageContainer.appendChild(bubble);
+            humataChatMessages.appendChild(messageContainer);
+            humataChatMessages.scrollTop = humataChatMessages.scrollHeight;
+        }
+
+        async function handleHumataSendMessage() {
+            const question = humataChatInput.value.trim();
+            if (!question) return;
+
+            displayHumataChatMessage(question, 'user');
+            humataChatInput.value = '';
+
+            const typingIndicator = document.createElement('div');
+            typingIndicator.id = 'humata-typing-indicator';
+            typingIndicator.className = 'chat-message ai';
+            typingIndicator.innerHTML = `<div class="chat-bubble ai"><div class="loader" style="width:20px; height:20px; margin:0;"></div></div>`;
+            humataChatMessages.appendChild(typingIndicator);
+            humataChatMessages.scrollTop = humataChatMessages.scrollHeight;
+
+            // ** Placeholder for actual Humata.ai API call **
+            console.log("Simulating Humata.ai follow-up...");
+
+            setTimeout(() => {
+                document.getElementById('humata-typing-indicator').remove();
+                displayHumataChatMessage("This is a simulated follow-up answer based on the document.", 'ai');
+            }, 1500);
+        }
+
+        humataChatSendBtn.addEventListener('click', handleHumataSendMessage);
+        humataChatInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') handleHumataSendMessage();
+        });
+
+
+        // --- General Initialization ---
+        document.addEventListener('DOMContentLoaded', () => {
+            initializePage();
+            loadProfilePic();
+            loadAiChatHistory();
+            populateEmotePicker();
+            initializeHealthWidget();
+
+            window.addEventListener('google-scripts-loaded', initializeMusicPlayer);
+
+            const chatroomBtns = document.querySelectorAll('.chatroom-btn');
+            chatroomBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    aiChatWindow.classList.add('hidden');
+                    joinChatRoom(btn.dataset.roomName);
+                });
+            });
+
+            const sosBtn = document.getElementById('sos-btn');
+            const sosSidebar = document.getElementById('sos-sidebar');
+            const closeSosSidebarBtn = document.getElementById('close-sos-sidebar');
+
+            sosBtn.addEventListener('click', () => {
+                sosSidebar.classList.remove('translate-x-full');
+            });
+            closeSosSidebarBtn.addEventListener('click', () => {
+                sosSidebar.classList.add('translate-x-full');
+            });
+
+            lucide.createIcons();
+        });
+
+    </script>
+</body>
+
+</html>
