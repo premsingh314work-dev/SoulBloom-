@@ -561,11 +561,11 @@
                 <div class="lg:col-span-2 flex flex-col gap-6">
                     <!-- Pixel Art GIFs -->
                     <div class="flex justify-end items-start gap-2">
-                        <img src="https://cdn.pixabay.com/animation/2023/05/12/10/21/10-21-51-812_512.gif" alt="pixel art cactus"
+                        <img src="../sources/gifs/a4a6b0a531328e5d9c984a793fa1ac04.gif" alt="pixel art cactus"
                             class="h-16" style="image-rendering: pixelated;">
-                        <img src="https://cdn.pixabay.com/animation/2023/09/07/23/29/23-29-38-554_512.gif" alt="pixel art plant pot"
+                        <img src="../sources/gifs/795bdef79e07f2d391865c015fb106b3.gif" alt="pixel art plant pot"
                             class="h-16" style="image-rendering: pixelated;">
-                        <img src="https://cdn.pixabay.com/animation/2023/10/13/02/36/02-36-32-329_512.gif" alt="pixel art succulent"
+                        <img src="../sources/gifs/fc0f0994797c60813accf3c88591bcbf.gif" alt="pixel art succulent"
                             class="h-16" style="image-rendering: pixelated;">
                     </div>
 
@@ -829,9 +829,9 @@
     <script type="module">
         // --- API Keys ---
         // IMPORTANT: Replace these placeholder values with your actual API keys.
-        const GIPHY_API_KEY = 'uNeyTTZ4KJJfJ4nkbxYPejBYrTHlI9NP';
+        const GIPHY_API_KEY = 'D25UbHQ9ZhdSwlwPPLWcc3WUXbS8vzd0';
         const GOOGLE_CLIENT_ID = '691627541266-nup7p5ked390epqje1vbh4eova6d7lpc.apps.googleusercontent.com';
-        const YOUTUBE_API_KEY = 'AIzaSyDic7dFBYHO_ejTvqcDB5EZdEgzYNuSwf0';
+        const YOUTUBE_API_KEY = 'AIzaSyC_lkraE5o71cEUZnHnbj84PJt6ZsBtt3E';
 
 
         // --- Firebase Setup ---
@@ -897,7 +897,7 @@
 
         // Cover Image Handling
         const coverElement = document.querySelector('.pixelated-bg');
-const GIPHY_GIF_IDS = [
+        const GIPHY_GIF_IDS = [
             'HRXnPYf10Zx0wz4alF', // Default best
             '6705G9I9sUcNCaJF10', // Pixel train through nature
             'rzeWnbH8Uc5Y4', // Night castle
@@ -1274,23 +1274,35 @@ const GIPHY_GIF_IDS = [
                     musicPlayerContainer.innerHTML = `<div class="flex items-center justify-center h-full text-center text-gray-400 p-4">Please add your YouTube API Key in the code.</div>`;
                     return;
                 };
-                gapi.load('client', async () => {
-                    try {
-                        await gapi.client.init({ apiKey: YOUTUBE_API_KEY, discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/youtube/v3/rest'] });
+                gapi.load('client', () => {
+                    gapi.client.init({
+                        apiKey: YOUTUBE_API_KEY,
+                        discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/youtube/v3/rest'],
+                    }).then(() => {
                         gapiInited = true;
-                    } catch (error) {
+                    }).catch(error => {
                         console.error("GAPI client init error:", error);
-                        musicPlayerContainer.innerHTML = `<div class="flex items-center justify-center h-full text-center text-gray-400 p-4">Error: Invalid YouTube API Key.</div>`;
-                    }
+                        let errorMessage = "Error initializing YouTube player.";
+                        if (error.result?.error?.message) {
+                            errorMessage = `Error: ${error.result.error.message}. Check API Key and domain restrictions in Google Cloud Console.`;
+                        }
+                        musicPlayerContainer.innerHTML = `<div class="flex items-center justify-center h-full text-center text-gray-400 p-4">${errorMessage}</div>`;
+                    });
                 });
             }
 
-            if (typeof google !== 'undefined') {
-                tokenClient = google.accounts.oauth2.initTokenClient({ client_id: GOOGLE_CLIENT_ID, scope: 'https://www.googleapis.com/auth/youtube.readonly', callback: handleAuthResponse });
-                gsiInited = true;
-                loadGapiScript();
+            if (typeof google !== 'undefined' && google.accounts) {
+                try {
+                    tokenClient = google.accounts.oauth2.initTokenClient({ client_id: GOOGLE_CLIENT_ID, scope: 'https://www.googleapis.com/auth/youtube.readonly', callback: handleAuthResponse });
+                    gsiInited = true;
+                    loadGapiScript();
+                } catch (e) {
+                    console.error("Google GSI init error:", e);
+                    musicPlayerContainer.innerHTML = `<div class="flex items-center justify-center h-full text-center text-gray-400 p-4">Error with Google Client ID. Check configuration.</div>`;
+                }
             } else {
-                console.error("Google GSI script not loaded.");
+                console.error("Google GSI script not loaded or initialized yet.");
+                musicPlayerContainer.innerHTML = `<div class="flex items-center justify-center h-full text-center text-gray-400 p-4">Could not load Google libraries. Please check your connection and refresh.</div>`;
             }
 
             async function handleAuthResponse(tokenResponse) {
@@ -1304,7 +1316,11 @@ const GIPHY_GIF_IDS = [
                     musicPlayerContainer.innerHTML = `<div class="flex items-center justify-center h-full text-center text-gray-400 p-4">Please add Google Client ID & YouTube API Key in the code.</div>`;
                     return;
                 }
-                if (gapiInited && gsiInited) tokenClient.requestAccessToken({ prompt: 'consent' });
+                if (gapiInited && gsiInited) {
+                    tokenClient.requestAccessToken({ prompt: 'consent' });
+                } else {
+                    alert("Authentication libraries are not ready. Please try again in a moment.");
+                }
             }
             function handleLogout() {
                 gapi.client.setToken(null);
