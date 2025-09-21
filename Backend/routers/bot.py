@@ -4,6 +4,10 @@ from Backend.repository.bot import gemini_response
 # from auth_dep import get_current_user  # JWT dependency
 from Backend import schemas
 
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import Depends
+security = HTTPBearer()
+
 
 
 
@@ -15,37 +19,23 @@ router = APIRouter(
 
 
 @router.post("/", response_model=schemas.ChatResponse)
-async def chat_endpoint(request_obj: Request, request: schemas.ChatRequest, authorization: str | None = Header(None)):
-    print("All headers:", request_obj.headers)
-    print("Authorization header param:", authorization)
-    if not authorization:
+async def chat_endpoint(
+    request_obj: Request,
+    request: schemas.ChatRequest,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    # credentials.scheme should be 'Bearer', credentials.credentials is the token
+    if credentials.scheme.lower() != "bearer":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"error": "Authorization header missing", "code": "auth_header_missing"}
+            detail={"error": "Invalid token type", "code": "invalid_token_type"}
         )
-
     try:
-        token_type, token = authorization.split(" ")
-        if token_type.lower() != "bearer":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail={"error": "Invalid token type", "code": "invalid_token_type"}
-            )
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"error": "Invalid authorization header format", "code": "invalid_header_format"}
-        )
-
-    try:
-        user_id = verify_jwt(token)
+        user_id = verify_jwt(credentials.credentials)
     except HTTPException as e:
-        # Forward friendly error messages from verify_jwt
         raise HTTPException(
             status_code=e.status_code,
             detail={"error": e.detail, "code": "jwt_error"}
         )
-
-    # Call Gemini response
     response = await gemini_response(user_id, request.message)
     return response
