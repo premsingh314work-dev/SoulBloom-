@@ -26,15 +26,6 @@
         }
     </script>
     <script src="https://accounts.google.com/gsi/client" onload="onGoogleScriptsLoad()" async defer></script>
-    <!-- Firebase SDKs -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, updateDoc, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        window.firebase = {
-            initializeApp, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, updateDoc, deleteDoc, getDocs
-        };
-    </script>
     <style>
         body {
             font-family: 'VT323', monospace;
@@ -332,7 +323,7 @@
 
         .journal-entry-item {
             cursor: pointer;
-            transition: background-color 0.2s;
+            transition: background-color: 0.2s;
         }
 
         .gradient-button-container {
@@ -834,6 +825,10 @@
 
 
     <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, query, onSnapshot, serverTimestamp, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
         // --- API Keys ---
         const GIPHY_API_KEY = 'D25UbHQ9ZhdSwlwPPLWcc3WUXbS8vzd0';
          // **ACTION**: Paste your new Client IDs here.
@@ -857,11 +852,6 @@
         
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const sanitizedAppId = appId.replace(/\//g, '_');
-
-
-        const { initializeApp } = window.firebase;
-        const { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } = window.firebase;
-        const { getFirestore, collection, addDoc, query, onSnapshot, serverTimestamp, doc, updateDoc, deleteDoc } = window.firebase;
 
         let db, auth, currentUserId, currentUserAnonymousName;
         let featuresInitialized = false;
@@ -1056,20 +1046,21 @@
             const clearTimestamp = localStorage.getItem(`chatClearTimestamp_${currentChatRoomId}`);
 
             const messagesRef = collection(db, `artifacts/${sanitizedAppId}/public/data/chatrooms/${currentChatRoomId}/messages`);
-            const q = query(messagesRef, orderBy("createdAt"));
+            const q = query(messagesRef);
 
             unsubscribeFromMessages = onSnapshot(q, (snapshot) => {
-                snapshot.docChanges().forEach((change) => {
-                    if (change.type === "added") {
-                        const messageData = change.doc.data();
-                        const messageTimestamp = messageData.createdAt?.toDate();
+                const messages = snapshot.docs.map(doc => doc.data());
+                messages.sort((a,b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
 
-                        if (clearTimestamp && messageTimestamp && messageTimestamp < new Date(clearTimestamp)) {
-                            return; // Skip rendering older messages
-                        }
-                        displayPeerChatMessage(messageData);
+                chatMessages.innerHTML = ''; // Clear before re-rendering
+                messages.forEach(messageData => {
+                    const messageTimestamp = messageData.createdAt?.toDate();
+                    if (clearTimestamp && messageTimestamp && messageTimestamp < new Date(clearTimestamp)) {
+                        return; 
                     }
+                    displayPeerChatMessage(messageData);
                 });
+
             }, (error) => {
                 console.error("Error listening to chat messages:", error);
                 chatMessages.innerHTML = '<div>Error loading messages. Please check permissions.</div>';
@@ -1416,10 +1407,8 @@
             }
 
             // --- Spotify Variables & Functions ---
-            // IMPORTANT: The redirect URI must be EXACTLY the same as one of the
-            // URIs you have added in your Spotify Developer Dashboard settings.
             const SPOTIFY_REDIRECT_URI = window.location.origin + window.location.pathname;
-            console.log("Using Spotify Redirect URI:", SPOTIFY_REDIRECT_URI); // For debugging
+            console.log("Using Spotify Redirect URI:", SPOTIFY_REDIRECT_URI);
             
             async function redirectToAuthCodeFlow() {
                 const verifier = generateCodeVerifier(128);
@@ -1454,14 +1443,30 @@
                 if (!token) return;
                 try {
                     const result = await fetch("https://api.spotify.com/v1/me/playlists", { method: "GET", headers: { Authorization: `Bearer ${token}` } });
-                    if (result.status === 401) { handleSpotifyLogout(); return; } // Token expired
+                    if (result.status === 401) { handleSpotifyLogout(); return; } 
                     const data = await result.json();
-                    renderSpotifyUserPlaylists(data.items);
+                    if (data.items && data.items.length > 0) {
+                        renderSpotifyUserPlaylists(data.items);
+                    } else {
+                        renderNoSpotifyPlaylistsMessage();
+                    }
                 } catch(e) { console.error("Could not fetch Spotify playlists", e); }
             }
             function handleSpotifyLogout() {
                 localStorage.removeItem('spotify_access_token');
                 renderSpotifyPlayer();
+            }
+            function renderNoSpotifyPlaylistsMessage() {
+                musicPlayerContainer.innerHTML = `
+                    <div class="flex flex-col items-center justify-center h-full gap-4 text-center">
+                        <i data-lucide="music-4" class="w-16 h-16 text-gray-500"></i>
+                        <h4 class="text-lg font-bold">No Playlists Found</h4>
+                        <p class="text-sm text-gray-400">We couldn't find any playlists in your Spotify account.</p>
+                        <button id="spotify-logout-btn" class="mt-4 bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 text-sm">Logout from Spotify</button>
+                    </div>
+                `;
+                document.getElementById('spotify-logout-btn').addEventListener('click', handleSpotifyLogout);
+                lucide.createIcons();
             }
             function renderSpotifyUserPlaylists(playlists) {
                  musicPlayerContainer.innerHTML = `
