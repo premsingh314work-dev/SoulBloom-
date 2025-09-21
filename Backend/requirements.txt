@@ -1,0 +1,23 @@
+# requests
+# # huggingface-hub
+# pymongo
+
+
+
+fastapi
+uvicorn[standard]
+
+# Database (MongoDB - async)
+motor
+
+# Security & Auth
+passlib[bcrypt]
+python-jose[cryptography]
+
+# HTTP Requests
+requests
+pydantic[email]
+#mongo atlas
+pymongo[srv]
+# google gemini
+google-genai
