@@ -861,7 +861,7 @@
 
         const { initializeApp } = window.firebase;
         const { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } = window.firebase;
-        const { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, updateDoc, deleteDoc, getDocs } = window.firebase;
+        const { getFirestore, collection, addDoc, query, onSnapshot, serverTimestamp, doc, updateDoc, deleteDoc } = window.firebase;
 
         let db, auth, currentUserId, currentUserAnonymousName;
         let featuresInitialized = false;
@@ -882,50 +882,50 @@
             console.error("Firebase initialization failed. Chat features will be disabled.", e);
         }
         
-        async function initializeAuth() {
-            const auth = getAuth();
-            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                try {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } catch (error) {
-                    console.error("Custom token sign-in failed, falling back to anonymous:", error);
-                    await signInAnonymously(auth);
-                }
-            } else {
-                 // No custom token, stay anonymous until a real sign-in occurs
-            }
-        }
-
         onAuthStateChanged(auth, user => {
-            if (user && !user.isAnonymous) {
-                currentUserId = user.uid;
-                let storedName = localStorage.getItem('anonymousUserName');
-                if (!storedName) {
-                    storedName = generateAnonymousName();
-                    localStorage.setItem('anonymousUserName', storedName);
-                }
-                currentUserAnonymousName = storedName;
-                console.log(`Authenticated as: ${currentUserAnonymousName} (${currentUserId})`);
-
-                const userNameElement = document.getElementById('user-anonymous-name');
-                if (userNameElement) {
-                    userNameElement.textContent = currentUserAnonymousName;
-                }
+            if (user) {
+                currentUserId = user.uid; // Always set UID for reference
                 
-                if (!featuresInitialized) {
-                    initializeAssignments();
-                    initializeJournaling();
-                    featuresInitialized = true;
-                }
+                if (user.isAnonymous) {
+                    // Handle Anonymous User State
+                    currentUserAnonymousName = "Guest";
+                    const userNameElement = document.getElementById('user-anonymous-name');
+                    if (userNameElement) userNameElement.textContent = currentUserAnonymousName;
+                    console.log(`Signed in anonymously with UID: ${user.uid}`);
+                    // Still call initializers; they will check storage mode and auth state.
+                    if (!featuresInitialized) {
+                        initializeAssignments();
+                        initializeJournaling();
+                        featuresInitialized = true;
+                    }
 
+                } else {
+                    // Handle Authenticated User State
+                    let storedName = localStorage.getItem('anonymousUserName');
+                    if (!storedName) {
+                        storedName = generateAnonymousName();
+                        localStorage.setItem('anonymousUserName', storedName);
+                    }
+                    currentUserAnonymousName = storedName;
+                    const userNameElement = document.getElementById('user-anonymous-name');
+                    if (userNameElement) userNameElement.textContent = currentUserAnonymousName;
+                    console.log(`Authenticated as: ${currentUserAnonymousName} (${currentUserId})`);
+                    
+                    if (!featuresInitialized) {
+                        initializeAssignments();
+                        initializeJournaling();
+                        featuresInitialized = true;
+                    }
+                }
             } else {
-                 featuresInitialized = false;
-                 // Sign in anonymously if no user is present
-                 if (!user) {
-                     signInAnonymously(auth).catch(err => console.error("Anonymous sign-in failed:", err));
-                 }
+                // Handle Signed Out State
+                currentUserId = null;
+                currentUserAnonymousName = "Guest";
+                featuresInitialized = false;
+                console.log("User is signed out.");
             }
         });
+
 
         // Cover Image Handling
         const coverElement = document.querySelector('.pixelated-bg');
@@ -1416,7 +1416,10 @@
             }
 
             // --- Spotify Variables & Functions ---
+            // IMPORTANT: The redirect URI must be EXACTLY the same as one of the
+            // URIs you have added in your Spotify Developer Dashboard settings.
             const SPOTIFY_REDIRECT_URI = window.location.origin + window.location.pathname;
+            console.log("Using Spotify Redirect URI:", SPOTIFY_REDIRECT_URI); // For debugging
             
             async function redirectToAuthCodeFlow() {
                 const verifier = generateCodeVerifier(128);
@@ -1605,13 +1608,24 @@
                 console.error("Firestore not initialized or user not authenticated for assignments.");
                 return;
             }
+            if (auth.currentUser && auth.currentUser.isAnonymous) {
+                clearAssignmentsList();
+                const infoItem = document.createElement('div');
+                infoItem.className = 'text-center text-gray-400 p-4 col-span-full';
+                infoItem.textContent = 'Sign in to sync assignments.';
+                assignmentsList.appendChild(infoItem);
+                return;
+            }
+
             const assignmentsRef = collection(db, `artifacts/${sanitizedAppId}/users/${currentUserId}/assignments`);
-            const q = query(assignmentsRef, orderBy("createdAt", "desc"));
+            const q = query(assignmentsRef);
 
             unsubscribeFromAssignments = onSnapshot(q, (snapshot) => {
                 clearAssignmentsList();
-                snapshot.forEach(doc => {
-                    renderAssignment(doc.data(), doc.id);
+                const assignments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                assignments.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+                assignments.forEach(assignment => {
+                    renderAssignment(assignment, assignment.id);
                 });
             }, (error) => {
                 console.error("Error getting assignments:", error);
@@ -1811,11 +1825,17 @@
 
         function initializeFirestoreJournal() {
             if (!db || !currentUserId) return;
+            if (auth.currentUser && auth.currentUser.isAnonymous) {
+                journalHistoryList.innerHTML = '<p class="text-sm text-center text-gray-400">Sign in to sync journal entries.</p>';
+                return;
+            }
             const journalRef = collection(db, `artifacts/${sanitizedAppId}/users/${currentUserId}/journal`);
-            const q = query(journalRef, orderBy("createdAt", "desc"));
+            const q = query(journalRef);
             unsubscribeFromJournal = onSnapshot(q, snapshot => {
                 journalHistoryList.innerHTML = '';
-                snapshot.forEach(doc => renderJournalHistoryItem(doc.data(), doc.id));
+                const entries = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                entries.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+                entries.forEach(entry => renderJournalHistoryItem(entry, entry.id));
             });
         }
 
@@ -2011,36 +2031,54 @@
 
 
         // --- General Initialization ---
-        document.addEventListener('DOMContentLoaded', () => {
-            initializeAuth().then(() => {
-                initializePage();
-                loadProfilePic();
-                initializeMusicPlayer();
-                loadAiChatHistory();
-                populateEmotePicker();
-                initializeHealthWidget();
+        document.addEventListener('DOMContentLoaded', async () => {
+            initializePage();
+            loadProfilePic();
+            initializeMusicPlayer();
+            loadAiChatHistory();
+            populateEmotePicker();
+            initializeHealthWidget();
 
-                const chatroomBtns = document.querySelectorAll('.chatroom-btn');
-                chatroomBtns.forEach(btn => {
-                    btn.addEventListener('click', () => {
-                        aiChatWindow.classList.add('hidden');
-                        joinChatRoom(btn.dataset.roomName);
-                    });
+            const chatroomBtns = document.querySelectorAll('.chatroom-btn');
+            chatroomBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    aiChatWindow.classList.add('hidden');
+                    joinChatRoom(btn.dataset.roomName);
                 });
-
-                const sosBtn = document.getElementById('sos-btn');
-                const sosSidebar = document.getElementById('sos-sidebar');
-                const closeSosSidebarBtn = document.getElementById('close-sos-sidebar');
-
-                sosBtn.addEventListener('click', () => {
-                    sosSidebar.classList.remove('translate-x-full');
-                });
-                closeSosSidebarBtn.addEventListener('click', () => {
-                    sosSidebar.classList.add('translate-x-full');
-                });
-
-                lucide.createIcons();
             });
+
+            const sosBtn = document.getElementById('sos-btn');
+            const sosSidebar = document.getElementById('sos-sidebar');
+            const closeSosSidebarBtn = document.getElementById('close-sos-sidebar');
+
+            sosBtn.addEventListener('click', () => {
+                sosSidebar.classList.remove('translate-x-full');
+            });
+            closeSosSidebarBtn.addEventListener('click', () => {
+                sosSidebar.classList.add('translate-x-full');
+            });
+
+            lucide.createIcons();
+
+            // Authentication is handled by the onAuthStateChanged listener, 
+            // which is set up when the script loads.
+            // This block now triggers the initial sign-in.
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (error) {
+                console.error("Initial authentication failed, attempting anonymous sign-in as fallback.", error);
+                if (!auth.currentUser) {
+                    try {
+                        await signInAnonymously(auth);
+                    } catch (anonError) {
+                        console.error("Fallback anonymous sign-in also failed.", anonError);
+                    }
+                }
+            }
         });
 
     </script>
