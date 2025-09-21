@@ -1,6 +1,6 @@
 from fastapi import APIRouter,HTTPException,status,Header,Depends,Request
 from Backend.auth import verify_jwt
-from repository.bot import gemini_response
+from Backend.repository.bot import gemini_response
 # from auth_dep import get_current_user  # JWT dependency
 from Backend import schemas
 
