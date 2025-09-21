@@ -1387,20 +1387,39 @@
                     document.getElementById('yt-logout-btn').addEventListener('click', handleYtLogout);
                 }
             }
+
             function renderUserPlaylists(playlists) {
                 musicPlayerContainer.innerHTML = `
                     <div class="flex flex-col h-full bg-black/20 rounded-lg">
-                        <iframe id="music-player-iframe" class="rounded-t-lg w-full h-3/5" src="https://www.youtube.com/embed/videoseries?list=${playlists[0].id}" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+                        <div class="w-full h-3/5 relative">
+                             <iframe id="music-player-iframe" class="rounded-t-lg w-full h-full" src="https://www.youtube.com/embed/videoseries?list=${playlists[0].id}" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+                        </div>
                         <div class="flex-1 flex flex-col min-h-0">
-                            <div class="flex justify-between items-center p-2 border-b border-white/10"><h4 class="font-bold text-base">Your Playlists</h4><button id="yt-logout-btn" class="text-xs text-gray-400 hover:text-white">Logout</button></div>
-                            <div class="flex-1 overflow-y-auto p-1">
-                                ${playlists.map(p => `<button class="yt-playlist-item w-full text-left p-2 hover:bg-white/10 rounded text-sm truncate" data-playlist-id="${p.id}" title="${p.snippet.title}">${p.snippet.title}</button>`).join('')}
+                            <div class="flex justify-between items-center p-2 border-b border-white/10">
+                                <h4 class="font-bold text-base">Your Playlists</h4>
+                                <button id="yt-logout-btn" class="text-xs text-gray-400 hover:text-white">Logout</button>
+                            </div>
+                            <div id="yt-playlist-list" class="flex-1 overflow-y-auto p-2 space-y-2">
+                                ${playlists.map((p, index) => `
+                                    <button class="yt-playlist-item flex items-center gap-3 w-full text-left p-2 hover:bg-white/10 rounded transition-colors duration-200 ${index === 0 ? 'bg-white/20' : ''}" data-playlist-id="${p.id}" title="${p.snippet.title}">
+                                        <img src="${p.snippet.thumbnails.default.url}" class="w-12 h-12 rounded object-cover" alt="Playlist thumbnail">
+                                        <span class="flex-1 text-sm font-medium truncate">${p.snippet.title}</span>
+                                    </button>
+                                `).join('')}
                             </div>
                         </div>
                     </div>`;
+
                 document.getElementById('yt-logout-btn').addEventListener('click', handleYtLogout);
-                document.querySelectorAll('.yt-playlist-item').forEach(item => {
+                
+                const playlistItems = document.querySelectorAll('.yt-playlist-item');
+                playlistItems.forEach(item => {
                     item.addEventListener('click', () => { 
+                        // Remove active state from all items
+                        playlistItems.forEach(el => el.classList.remove('bg-white/20'));
+                        // Add active state to clicked item
+                        item.classList.add('bg-white/20');
+                        // Update the iframe src
                         document.getElementById('music-player-iframe').src = `https://www.youtube.com/embed/videoseries?list=${item.dataset.playlistId}`; 
                     });
                 });
