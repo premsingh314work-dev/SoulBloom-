@@ -10,22 +10,29 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- 
+      The Google Sign-In script is loaded asynchronously. 
+      The 'onGoogleScriptsLoad' function will be our single entry point
+      to start the rest of the Google API initialization process.
+    -->
     <script>
-        // This function is now globally available and will be called by the Google script.
-        // It dispatches a custom event that our main module script can listen for.
-        // This avoids the race condition error.
+        // Set a global flag when the GSI script's onload callback fires.
+        // This helps prevent a race condition with DOMContentLoaded.
+        window.googleGsiIsReady = false;
         function onGoogleScriptsLoad() {
-            window.dispatchEvent(new Event('google-scripts-loaded'));
+            window.googleGsiIsReady = true;
+            // Dispatch a custom event to let our main script know the GSI client is ready.
+            window.dispatchEvent(new Event('google-gsi-loaded'));
         }
     </script>
     <script src="https://accounts.google.com/gsi/client" onload="onGoogleScriptsLoad()" async defer></script>
     <!-- Firebase SDKs -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, updateDoc, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         window.firebase = {
-            initializeApp, getAuth, signInAnonymously, onAuthStateChanged, getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, updateDoc, deleteDoc, getDocs
+            initializeApp, getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken, getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, updateDoc, deleteDoc, getDocs
         };
     </script>
     <style>
@@ -828,10 +835,11 @@
 
     <script type="module">
         // --- API Keys ---
-        // IMPORTANT: Replace these placeholder values with your actual API keys.
         const GIPHY_API_KEY = 'D25UbHQ9ZhdSwlwPPLWcc3WUXbS8vzd0';
-        const GOOGLE_CLIENT_ID = '691627541266-nup7p5ked390epqje1vbh4eova6d7lpc.apps.googleusercontent.com';
-        const YOUTUBE_API_KEY = 'AIzaSyC_lkraE5o71cEUZnHnbj84PJt6ZsBtt3E';
+        // **ACTION**: Paste your new Client IDs here.
+        const YT_MUSIC_CLIENT_ID = '186638354534-sc0ecemspj32eqkqk3u67ma2fe87gfnj.apps.googleusercontent.com';
+        const GOOGLE_FIT_CLIENT_ID = '691627541266-nup7p5ked390epqje1vbh4eova6d7lpc.apps.googleusercontent.com';
+        const YOUTUBE_API_KEY = 'AIzaSyC4isDfYT5JO64BtH1lvBP0-etVBXhAThA';
 
 
         // --- Firebase Setup ---
@@ -845,13 +853,17 @@
             measurementId: "G-K159S6DZNP"
         };
         const finalFirebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : firebaseConfig;
+        
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const sanitizedAppId = appId.replace(/\//g, '_');
+
 
         const { initializeApp } = window.firebase;
-        const { getAuth, signInAnonymously, onAuthStateChanged } = window.firebase;
+        const { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } = window.firebase;
         const { getFirestore, collection, addDoc, query, orderBy, onSnapshot, serverTimestamp, doc, updateDoc, deleteDoc, getDocs } = window.firebase;
 
         let db, auth, currentUserId, currentUserAnonymousName;
+        let featuresInitialized = false;
 
         function generateAnonymousName() {
             const adjectives = ["Brave", "Silent", "Wise", "Wandering", "Gentle", "Hidden", "Cosmic", "Lunar", "Solar", "Pixelated"];
@@ -868,9 +880,23 @@
         } catch (e) {
             console.error("Firebase initialization failed. Chat features will be disabled.", e);
         }
+        
+        async function initializeAuth() {
+            const auth = getAuth();
+            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                try {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } catch (error) {
+                    console.error("Custom token sign-in failed, falling back to anonymous:", error);
+                    await signInAnonymously(auth);
+                }
+            } else {
+                 // No custom token, stay anonymous until a real sign-in occurs
+            }
+        }
 
         onAuthStateChanged(auth, user => {
-            if (user) {
+            if (user && !user.isAnonymous) {
                 currentUserId = user.uid;
                 let storedName = localStorage.getItem('anonymousUserName');
                 if (!storedName) {
@@ -884,14 +910,19 @@
                 if (userNameElement) {
                     userNameElement.textContent = currentUserAnonymousName;
                 }
+                
+                if (!featuresInitialized) {
+                    initializeAssignments();
+                    initializeJournaling();
+                    featuresInitialized = true;
+                }
 
-                // Initialize features that depend on auth
-                initializeAssignments();
-                initializeJournaling();
             } else {
-                signInAnonymously(auth).catch(error => {
-                    console.error("Anonymous sign-in failed:", error);
-                });
+                 featuresInitialized = false;
+                 // Sign in anonymously if no user is present
+                 if (!user) {
+                     signInAnonymously(auth).catch(err => console.error("Anonymous sign-in failed:", err));
+                 }
             }
         });
 
@@ -1023,7 +1054,7 @@
 
             const clearTimestamp = localStorage.getItem(`chatClearTimestamp_${currentChatRoomId}`);
 
-            const messagesRef = collection(db, `artifacts/${appId}/public/data/chatrooms/${currentChatRoomId}/messages`);
+            const messagesRef = collection(db, `artifacts/${sanitizedAppId}/public/data/chatrooms/${currentChatRoomId}/messages`);
             const q = query(messagesRef, orderBy("createdAt"));
 
             unsubscribeFromMessages = onSnapshot(q, (snapshot) => {
@@ -1067,7 +1098,7 @@
             const userInput = chatInput.value.trim();
             if (!userInput || !currentChatRoomId || !currentUserId || !db) return;
 
-            const messagesRef = collection(db, `artifacts/${appId}/public/data/chatrooms/${currentChatRoomId}/messages`);
+            const messagesRef = collection(db, `artifacts/${sanitizedAppId}/public/data/chatrooms/${currentChatRoomId}/messages`);
 
             try {
                 await addDoc(messagesRef, {
@@ -1253,14 +1284,62 @@
             if (savedEmote) profilePicEmoji.textContent = savedEmote;
         }
 
+        // --- CORRECTED MUSIC PLAYER LOGIC ---
         function initializeMusicPlayer() {
             const spotifyBtn = document.getElementById('spotify-btn');
             const ytMusicBtn = document.getElementById('yt-music-btn');
             const musicPlayerContainer = document.getElementById('music-player-container');
 
-            const SPOTIFY_EMBED_URL = 'https://open.spotify.com/embed/playlist/37i9dQZF1DWWQRwui02dT8';
-            const YOUTUBE_DEFAULT_EMBED_URL = 'https://www.youtube.com/embed/videoseries?list=RDCLAK5uy_l3q3V2I_gCls-0pso33pQz2v-2dGPlwzg';
-            let tokenClient, gapiInited = false, gsiInited = false;
+            const SPOTIFY_EMBED_URL = 'https://open.spotify.com/embed/track/4xbN7giFhdGbSQTPyG178F?utm_source=generator';
+            const YOUTUBE_DEFAULT_EMBED_URL = 'https://www.youtube.com/embed/videoseries?si=mZEvRu44Icch4kLJ&amp;list=PLm1EodmV4HIjT0EjDGKFsWU5vOidU2rtW';
+            
+            let tokenClient;
+            let gapiReady = false;
+            let gsiReady = false;
+            let ytSyncError = null;
+
+            function updateYtLoginButtonState() {
+                const loginBtn = document.getElementById('yt-login-btn');
+                if (!loginBtn) return;
+
+                if (ytSyncError) {
+                    loginBtn.disabled = true;
+                    loginBtn.textContent = 'Sync Error';
+                    loginBtn.title = ytSyncError; // Show detailed error on hover
+                    return;
+                }
+
+                if (gapiReady && gsiReady) {
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = 'Sync YouTube Music';
+                    loginBtn.title = 'Login with your Google account to see your playlists.';
+                } else {
+                    loginBtn.disabled = true;
+                    loginBtn.textContent = 'Loading Sync...';
+                    loginBtn.title = 'Waiting for Google libraries to load...';
+                }
+            }
+            
+            function initializeGapiClient() {
+                if (YOUTUBE_API_KEY.includes('YOUR_')) {
+                     ytSyncError = "YouTube API Key is missing.";
+                     updateYtLoginButtonState();
+                     return;
+                }
+                gapi.load('client', () => {
+                    gapi.client.init({
+                        apiKey: YOUTUBE_API_KEY,
+                        discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/youtube/v3/rest'],
+                    }).then(() => {
+                        gapiReady = true;
+                        updateYtLoginButtonState();
+                    }).catch(error => {
+                        console.error("GAPI client init error:", error);
+                        ytSyncError = `GAPI Error: The YouTube Data API is not enabled for this project. Please enable it in the Google Cloud Console.`;
+                        updateYtLoginButtonState();
+                    });
+                });
+            }
 
             function loadGapiScript() {
                 const script = document.createElement('script');
@@ -1269,63 +1348,56 @@
                 document.body.appendChild(script);
             }
 
-            function initializeGapiClient() {
-                if (YOUTUBE_API_KEY.includes('YOUR_')) {
-                    musicPlayerContainer.innerHTML = `<div class="flex items-center justify-center h-full text-center text-gray-400 p-4">Please add your YouTube API Key in the code.</div>`;
+            function initializeGsiClient() {
+                 if (typeof google === 'undefined' || !google.accounts) {
+                    console.error("Google GSI script not loaded correctly.");
+                    ytSyncError = "Google script failed to load.";
+                    updateYtLoginButtonState();
                     return;
-                };
-                gapi.load('client', () => {
-                    gapi.client.init({
-                        apiKey: YOUTUBE_API_KEY,
-                        discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/youtube/v3/rest'],
-                    }).then(() => {
-                        gapiInited = true;
-                    }).catch(error => {
-                        console.error("GAPI client init error:", error);
-                        let errorMessage = "Error initializing YouTube player.";
-                        if (error.result?.error?.message) {
-                            errorMessage = `Error: ${error.result.error.message}. Check API Key and domain restrictions in Google Cloud Console.`;
-                        }
-                        musicPlayerContainer.innerHTML = `<div class="flex items-center justify-center h-full text-center text-gray-400 p-4">${errorMessage}</div>`;
-                    });
-                });
-            }
-
-            if (typeof google !== 'undefined' && google.accounts) {
-                try {
-                    tokenClient = google.accounts.oauth2.initTokenClient({ client_id: GOOGLE_CLIENT_ID, scope: 'https://www.googleapis.com/auth/youtube.readonly', callback: handleAuthResponse });
-                    gsiInited = true;
-                    loadGapiScript();
-                } catch (e) {
-                    console.error("Google GSI init error:", e);
-                    musicPlayerContainer.innerHTML = `<div class="flex items-center justify-center h-full text-center text-gray-400 p-4">Error with Google Client ID. Check configuration.</div>`;
                 }
-            } else {
-                console.error("Google GSI script not loaded or initialized yet.");
-                musicPlayerContainer.innerHTML = `<div class="flex items-center justify-center h-full text-center text-gray-400 p-4">Could not load Google libraries. Please check your connection and refresh.</div>`;
+                 if (YT_MUSIC_CLIENT_ID.includes('PASTE_') || YT_MUSIC_CLIENT_ID.includes('YOUR_')) {
+                    ytSyncError = "Please add your YouTube Music OAuth Client ID to the code.";
+                    updateYtLoginButtonState();
+                    return;
+                }
+                try {
+                    tokenClient = google.accounts.oauth2.initTokenClient({ 
+                        client_id: YT_MUSIC_CLIENT_ID, 
+                        scope: 'https://www.googleapis.com/auth/youtube.readonly', 
+                        callback: handleAuthResponse 
+                    });
+                    gsiReady = true;
+                    loadGapiScript();
+                } catch(e) {
+                     console.error("Google GSI init error:", e);
+                     ytSyncError = "GSI Init Failed for YT Music. Check Client ID configuration.";
+                     updateYtLoginButtonState();
+                }
             }
 
             async function handleAuthResponse(tokenResponse) {
                 if (tokenResponse.access_token) {
                     gapi.client.setToken(tokenResponse);
                     await fetchAndDisplayPlaylists();
+                } else {
+                    console.error("Auth response did not contain access token.", tokenResponse);
+                    musicPlayerContainer.innerHTML = `<div class="text-center p-4">Authentication failed. Please try again.</div>`;
                 }
             }
+            
             function handleYtLogin() {
-                if (GOOGLE_CLIENT_ID.includes('YOUR_') || YOUTUBE_API_KEY.includes('YOUR_')) {
-                    musicPlayerContainer.innerHTML = `<div class="flex items-center justify-center h-full text-center text-gray-400 p-4">Please add Google Client ID & YouTube API Key in the code.</div>`;
-                    return;
-                }
-                if (gapiInited && gsiInited) {
+                if (gapiReady && gsiReady && tokenClient) {
                     tokenClient.requestAccessToken({ prompt: 'consent' });
                 } else {
-                    alert("Authentication libraries are not ready. Please try again in a moment.");
+                    console.warn("Auth libraries not ready. Login blocked.");
                 }
             }
+
             function handleLogout() {
                 gapi.client.setToken(null);
                 renderDefaultYtPlayer();
             }
+
             async function fetchAndDisplayPlaylists() {
                 musicPlayerContainer.innerHTML = '<div class="loader mx-auto mt-16"></div>';
                 try {
@@ -1333,15 +1405,16 @@
                     if (response.result.items && response.result.items.length > 0) {
                         renderUserPlaylists(response.result.items);
                     } else {
-                        musicPlayerContainer.innerHTML = `<div class="text-center p-4">No playlists found. <button id="yt-logout-btn" class="text-sm text-red-400 hover:text-white block mx-auto mt-2">Logout</button></div>`;
+                        musicPlayerContainer.innerHTML = `<div class="text-center p-4">No public playlists found in your account. <button id="yt-logout-btn" class="text-sm text-red-400 hover:text-white block mx-auto mt-2">Logout</button></div>`;
                         document.getElementById('yt-logout-btn').addEventListener('click', handleLogout);
                     }
                 } catch (err) {
                     console.error("Error fetching playlists:", err);
-                    musicPlayerContainer.innerHTML = `<div class="text-center p-4">Could not fetch playlists.</div> <button id="yt-login-btn-retry" class="mx-auto block bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">Login Again</button>`;
-                    document.getElementById('yt-login-btn-retry').addEventListener('click', handleYtLogin);
+                    musicPlayerContainer.innerHTML = `<div class="text-center p-4">Could not fetch playlists. Please ensure you have granted permission.</div> <button id="yt-logout-btn" class="mx-auto block text-sm text-gray-400 hover:text-white mt-2">Logout</button>`;
+                    document.getElementById('yt-logout-btn').addEventListener('click', handleLogout);
                 }
             }
+
             function renderUserPlaylists(playlists) {
                 const defaultPlaylistId = playlists[0].id;
                 musicPlayerContainer.innerHTML = `
@@ -1357,22 +1430,37 @@
                     item.addEventListener('click', () => { document.getElementById('music-player-iframe').src = `https://www.youtube.com/embed/videoseries?list=${item.dataset.playlistId}`; });
                 });
             }
+            
             function renderSpotifyPlayer() {
                 musicPlayerContainer.innerHTML = `<iframe class="rounded-lg w-full h-full" src="${SPOTIFY_EMBED_URL}" title="Spotify Playlist" frameborder="0" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>`;
                 ytMusicBtn.classList.remove('ring-2', 'ring-white');
                 spotifyBtn.classList.add('ring-2', 'ring-white');
             }
+            
             function renderDefaultYtPlayer() {
-                musicPlayerContainer.innerHTML = `<div class="flex flex-col items-center justify-center h-full gap-4"> <iframe class="rounded-lg w-full h-4/5" src="${YOUTUBE_DEFAULT_EMBED_URL}" title="lofi hip hop radio" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe> <button id="yt-login-btn" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600">Sync YouTube Music</button> </div>`;
-                document.getElementById('yt-login-btn').addEventListener('click', handleYtLogin);
+                musicPlayerContainer.innerHTML = `<div class="flex flex-col items-center justify-center h-full gap-4"> <iframe class="rounded-lg w-full h-4/5" src="${YOUTUBE_DEFAULT_EMBED_URL}" title="lofi hip hop radio" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe> <button id="yt-login-btn" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600" disabled>Loading Sync...</button> </div>`;
+                const loginBtn = document.getElementById('yt-login-btn');
+                if(loginBtn) {
+                    loginBtn.addEventListener('click', handleYtLogin);
+                    updateYtLoginButtonState();
+                }
                 spotifyBtn.classList.remove('ring-2', 'ring-white');
                 ytMusicBtn.classList.add('ring-2', 'ring-white');
             }
 
+            // --- Initialization Logic ---
             spotifyBtn.addEventListener('click', renderSpotifyPlayer);
             ytMusicBtn.addEventListener('click', renderDefaultYtPlayer);
+
+            if (window.googleGsiIsReady) {
+                initializeGsiClient();
+            } else {
+                window.addEventListener('google-gsi-loaded', initializeGsiClient, { once: true });
+            }
+
             renderDefaultYtPlayer();
         }
+
 
         // --- Assignments Logic ---
         const assignmentsList = document.getElementById('assignments-list');
@@ -1433,10 +1521,10 @@
 
         function initializeFirestoreAssignments() {
             if (!db || !currentUserId) {
-                console.error("Firestore not initialized or user not authenticated.");
+                console.error("Firestore not initialized or user not authenticated for assignments.");
                 return;
             }
-            const assignmentsRef = collection(db, `artifacts/${appId}/public/data/assignments`);
+            const assignmentsRef = collection(db, `artifacts/${sanitizedAppId}/users/${currentUserId}/assignments`);
             const q = query(assignmentsRef, orderBy("createdAt", "desc"));
 
             unsubscribeFromAssignments = onSnapshot(q, (snapshot) => {
@@ -1486,8 +1574,8 @@
             if (!name) return;
 
             if (assignmentStorageMode === 'server') {
-                if (!db) return;
-                await addDoc(collection(db, `artifacts/${appId}/public/data/assignments`), {
+                if (!db || !currentUserId) return;
+                await addDoc(collection(db, `artifacts/${sanitizedAppId}/users/${currentUserId}/assignments`), {
                     name, course, dueDate, completed: false, createdAt: serverTimestamp()
                 });
             } else {
@@ -1508,12 +1596,12 @@
         assignmentsList.addEventListener('click', async (e) => {
             const target = e.target;
             const taskItem = target.closest('.task-item');
-            if (!taskItem) return;
+            if (!taskItem || !currentUserId) return;
             const id = taskItem.dataset.id;
 
             if (assignmentStorageMode === 'server') {
                 if (!db) return;
-                const docRef = doc(db, `artifacts/${appId}/public/data/assignments`, id);
+                const docRef = doc(db, `artifacts/${sanitizedAppId}/users/${currentUserId}/assignments`, id);
                 if (target.matches('.task-checkbox')) {
                     await updateDoc(docRef, { completed: target.checked });
                 }
@@ -1577,13 +1665,10 @@
         }
 
         function initializeHealthWidget() {
-            // For now, always show dummy data.
-            // In a real scenario, you'd check for a valid token first.
             displayDummyHealthData();
 
-            // Display login button
-            if (GOOGLE_CLIENT_ID.includes('YOUR_')) {
-                googleFitAuthContainer.innerHTML = `<p class="text-sm text-gray-400">Add Google Client ID in code to connect.</p>`;
+            if (GOOGLE_FIT_CLIENT_ID.includes('PASTE_') || GOOGLE_FIT_CLIENT_ID.includes('YOUR_')) {
+                googleFitAuthContainer.innerHTML = `<p class="text-sm text-gray-400">Add Google Fit Client ID in code to connect.</p>`;
             } else {
                 googleFitAuthContainer.innerHTML = `<button id="google-fit-login-btn" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Connect Google Fit</button>`;
                 document.getElementById('google-fit-login-btn').addEventListener('click', handleFitLogin);
@@ -1591,17 +1676,21 @@
         }
 
         function handleFitLogin() {
-            if (typeof google === 'undefined') {
+            if (typeof google === 'undefined' || !google.accounts) {
                 alert("Google scripts not loaded yet. Please try again.");
                 return;
             }
-            // Initialize a new token client specifically for Fit scopes
-            fitTokenClient = google.accounts.oauth2.initTokenClient({
-                client_id: GOOGLE_CLIENT_ID,
-                scope: 'https://www.googleapis.com/auth/fitness.activity.read https://www.googleapis.com/auth/fitness.heart_rate.read https://www.googleapis.com/auth/fitness.sleep.read',
-                callback: handleFitAuthResponse,
-            });
-            fitTokenClient.requestAccessToken({ prompt: 'consent' });
+            try {
+                fitTokenClient = google.accounts.oauth2.initTokenClient({
+                    client_id: GOOGLE_FIT_CLIENT_ID,
+                    scope: 'https://www.googleapis.com/auth/fitness.activity.read https://www.googleapis.com/auth/fitness.heart_rate.read https://www.googleapis.com/auth/fitness.sleep.read',
+                    callback: handleFitAuthResponse,
+                });
+                fitTokenClient.requestAccessToken({ prompt: 'consent' });
+            } catch(e) {
+                console.error("GSI Init Failed for Google Fit. Check Client ID.", e);
+                googleFitAuthContainer.innerHTML = `<p class="text-sm text-red-400">Error: Check Google Fit Client ID.</p>`;
+            }
         }
 
         async function handleFitAuthResponse(tokenResponse) {
@@ -1641,7 +1730,7 @@
 
         function initializeFirestoreJournal() {
             if (!db || !currentUserId) return;
-            const journalRef = collection(db, `artifacts/${appId}/public/data/journal`);
+            const journalRef = collection(db, `artifacts/${sanitizedAppId}/users/${currentUserId}/journal`);
             const q = query(journalRef, orderBy("createdAt", "desc"));
             unsubscribeFromJournal = onSnapshot(q, snapshot => {
                 journalHistoryList.innerHTML = '';
@@ -1725,7 +1814,7 @@
                     alert("Cannot save entry. Connection not established."); return;
                 }
                 try {
-                    await addDoc(collection(db, `artifacts/${appId}/public/data/journal`), {
+                    await addDoc(collection(db, `artifacts/${sanitizedAppId}/users/${currentUserId}/journal`), {
                         entry: entryText, createdAt: serverTimestamp(), userId: currentUserId
                     });
                 } catch (error) {
@@ -1842,38 +1931,39 @@
 
         // --- General Initialization ---
         document.addEventListener('DOMContentLoaded', () => {
-            initializePage();
-            loadProfilePic();
-            initializeMusicPlayer();
-            loadAiChatHistory();
-            populateEmotePicker();
-            initializeHealthWidget();
+            initializeAuth().then(() => {
+                initializePage();
+                loadProfilePic();
+                initializeMusicPlayer();
+                loadAiChatHistory();
+                populateEmotePicker();
+                initializeHealthWidget();
 
-            window.addEventListener('google-scripts-loaded', initializeMusicPlayer);
-
-            const chatroomBtns = document.querySelectorAll('.chatroom-btn');
-            chatroomBtns.forEach(btn => {
-                btn.addEventListener('click', () => {
-                    aiChatWindow.classList.add('hidden');
-                    joinChatRoom(btn.dataset.roomName);
+                const chatroomBtns = document.querySelectorAll('.chatroom-btn');
+                chatroomBtns.forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        aiChatWindow.classList.add('hidden');
+                        joinChatRoom(btn.dataset.roomName);
+                    });
                 });
-            });
 
-            const sosBtn = document.getElementById('sos-btn');
-            const sosSidebar = document.getElementById('sos-sidebar');
-            const closeSosSidebarBtn = document.getElementById('close-sos-sidebar');
+                const sosBtn = document.getElementById('sos-btn');
+                const sosSidebar = document.getElementById('sos-sidebar');
+                const closeSosSidebarBtn = document.getElementById('close-sos-sidebar');
 
-            sosBtn.addEventListener('click', () => {
-                sosSidebar.classList.remove('translate-x-full');
-            });
-            closeSosSidebarBtn.addEventListener('click', () => {
-                sosSidebar.classList.add('translate-x-full');
-            });
+                sosBtn.addEventListener('click', () => {
+                    sosSidebar.classList.remove('translate-x-full');
+                });
+                closeSosSidebarBtn.addEventListener('click', () => {
+                    sosSidebar.classList.add('translate-x-full');
+                });
 
-            lucide.createIcons();
+                lucide.createIcons();
+            });
         });
 
     </script>
 </body>
 
 </html>
+
