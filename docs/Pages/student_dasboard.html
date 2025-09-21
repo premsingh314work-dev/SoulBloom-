@@ -832,7 +832,7 @@
         // --- API Keys ---
         const GIPHY_API_KEY = 'D25UbHQ9ZhdSwlwPPLWcc3WUXbS8vzd0';
          // **ACTION**: Paste your new Client IDs here.
-        const SPOTIFY_CLIENT_ID = 'YOUR_SPOTIFY_CLIENT_ID'; // Add your Spotify Client ID here
+        const SPOTIFY_CLIENT_ID = '974fb988050a4b52a8dac1b812c8a9e4'; // Add your Spotify Client ID here
         const YT_MUSIC_CLIENT_ID = '186638354534-sc0ecemspj32eqkqk3u67ma2fe87gfnj.apps.googleusercontent.com';
         const GOOGLE_FIT_CLIENT_ID = '691627541266-nup7p5ked390epqje1vbh4eova6d7lpc.apps.googleusercontent.com';
         const YOUTUBE_API_KEY = 'AIzaSyC4isDfYT5JO64BtH1lvBP0-etVBXhAThA';
@@ -874,21 +874,24 @@
         onAuthStateChanged(auth, user => {
             if (user) {
                 currentUserId = user.uid;
-                
-                if (user.isAnonymous) {
-                    currentUserAnonymousName = "Guest";
-                    const userNameElement = document.getElementById('user-anonymous-name');
-                    if (userNameElement) userNameElement.textContent = currentUserAnonymousName;
-                } else {
-                    let storedName = localStorage.getItem('anonymousUserName');
-                    if (!storedName) {
-                        storedName = generateAnonymousName();
-                        localStorage.setItem('anonymousUserName', storedName);
-                    }
-                    currentUserAnonymousName = storedName;
-                    const userNameElement = document.getElementById('user-anonymous-name');
-                    if (userNameElement) userNameElement.textContent = currentUserAnonymousName;
+
+                let storedName = localStorage.getItem('anonymousUserName');
+                if (!storedName) {
+                    storedName = generateAnonymousName();
+                    localStorage.setItem('anonymousUserName', storedName);
                 }
+
+                if (user.isAnonymous) {
+                    currentUserAnonymousName = storedName;
+                } else {
+                    currentUserAnonymousName = user.displayName || storedName;
+                }
+                
+                const userNameElement = document.getElementById('user-anonymous-name');
+                if (userNameElement) {
+                    userNameElement.textContent = currentUserAnonymousName;
+                }
+                
             } else {
                 currentUserId = null;
                 currentUserAnonymousName = "Guest";
