@@ -1,7 +1,7 @@
 # requests
 # # huggingface-hub
-# pymongo
-
+pymongo
+certifi
 
 
 fastapi
