@@ -837,6 +837,7 @@
         // --- API Keys ---
         const GIPHY_API_KEY = 'D25UbHQ9ZhdSwlwPPLWcc3WUXbS8vzd0';
          // **ACTION**: Paste your new Client IDs here.
+        const SPOTIFY_CLIENT_ID = '974fb988050a4b52a8dac1b812c8a9e4'; // Add your Spotify Client ID here
         const YT_MUSIC_CLIENT_ID = '186638354534-sc0ecemspj32eqkqk3u67ma2fe87gfnj.apps.googleusercontent.com';
         const GOOGLE_FIT_CLIENT_ID = '691627541266-nup7p5ked390epqje1vbh4eova6d7lpc.apps.googleusercontent.com';
         const YOUTUBE_API_KEY = 'AIzaSyC4isDfYT5JO64BtH1lvBP0-etVBXhAThA';
@@ -1284,121 +1285,101 @@
             if (savedEmote) profilePicEmoji.textContent = savedEmote;
         }
 
-        // --- CORRECTED MUSIC PLAYER LOGIC ---
+        // --- Music Player Helper Functions ---
+        function generateCodeVerifier(length) {
+            let text = '';
+            let possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
+            for (let i = 0; i < length; i++) {
+                text += possible.charAt(Math.floor(Math.random() * possible.length));
+            }
+            return text;
+        }
+
+        async function generateCodeChallenge(codeVerifier) {
+            const data = new TextEncoder().encode(codeVerifier);
+            const digest = await window.crypto.subtle.digest('SHA-256', data);
+            return btoa(String.fromCharCode.apply(null, [...new Uint8Array(digest)]))
+                .replace(/\+/g, '-')
+                .replace(/\//g, '_')
+                .replace(/=+$/, '');
+        }
+
+        // --- UPDATED MUSIC PLAYER LOGIC ---
         function initializeMusicPlayer() {
             const spotifyBtn = document.getElementById('spotify-btn');
             const ytMusicBtn = document.getElementById('yt-music-btn');
             const musicPlayerContainer = document.getElementById('music-player-container');
-
-            const SPOTIFY_EMBED_URL = 'https://open.spotify.com/embed/track/4xbN7giFhdGbSQTPyG178F?utm_source=generator';
-            // **FIX**: Changed default to a YouTube Music "My Mix" playlist
-            const YOUTUBE_DEFAULT_EMBED_URL = 'https://www.youtube.com/embed/videoseries?list=RDCLAK5uy_k_x_8s148-_3tBGn1K0C_k22y_j4a-gA8';
+            const YOUTUBE_DEFAULT_EMBED_URL = 'https://www.youtube.com/embed/videoseries?list=PLx0sYbCqOb8TAYb-i2J_a_a-2IUN-p2w-';
             
+            // --- YouTube Music Variables & Functions ---
             let tokenClient;
             let gapiReady = false;
             let gsiReady = false;
             let ytSyncError = null;
-
+            
             function updateYtLoginButtonState() {
                 const loginBtn = document.getElementById('yt-login-btn');
                 if (!loginBtn) return;
-
                 if (ytSyncError) {
-                    loginBtn.disabled = true;
-                    loginBtn.textContent = 'Sync Error';
-                    loginBtn.title = ytSyncError; // Show detailed error on hover
-                    return;
+                    loginBtn.disabled = true; loginBtn.textContent = 'Sync Error'; loginBtn.title = ytSyncError; return;
                 }
-
                 if (gapiReady && gsiReady) {
-                    loginBtn.disabled = false;
-                    loginBtn.textContent = 'Sync YouTube Music';
-                    loginBtn.title = 'Login with your Google account to see your playlists.';
+                    loginBtn.disabled = false; loginBtn.textContent = 'Sync YouTube Music'; loginBtn.title = 'Login to see your playlists.';
                 } else {
-                    loginBtn.disabled = true;
-                    loginBtn.textContent = 'Loading Sync...';
-                    loginBtn.title = 'Waiting for Google libraries to load...';
+                    loginBtn.disabled = true; loginBtn.textContent = 'Loading Sync...'; loginBtn.title = 'Waiting for Google libraries...';
                 }
             }
-            
             function initializeGapiClient() {
                 if (YOUTUBE_API_KEY.includes('YOUR_')) {
-                     ytSyncError = "YouTube API Key is missing.";
-                     updateYtLoginButtonState();
-                     return;
+                     ytSyncError = "YouTube API Key is missing."; updateYtLoginButtonState(); return;
                 }
                 gapi.load('client', () => {
                     gapi.client.init({
                         apiKey: YOUTUBE_API_KEY,
                         discoveryDocs: ['https://www.googleapis.com/discovery/v1/apis/youtube/v3/rest'],
                     }).then(() => {
-                        gapiReady = true;
-                        updateYtLoginButtonState();
+                        gapiReady = true; updateYtLoginButtonState();
                     }).catch(error => {
                         console.error("GAPI client init error:", error);
-                        ytSyncError = `GAPI Error: The YouTube Data API is not enabled for this project. Please enable it in the Google Cloud Console.`;
-                        updateYtLoginButtonState();
+                        ytSyncError = `GAPI Error: The YouTube Data API is not enabled.`; updateYtLoginButtonState();
                     });
                 });
             }
-
             function loadGapiScript() {
-                const script = document.createElement('script');
-                script.src = 'https://apis.google.com/js/api.js';
-                script.onload = initializeGapiClient;
-                document.body.appendChild(script);
+                const script = document.createElement('script'); script.src = 'https://apis.google.com/js/api.js';
+                script.onload = initializeGapiClient; document.body.appendChild(script);
             }
-
             function initializeGsiClient() {
                  if (typeof google === 'undefined' || !google.accounts) {
-                    console.error("Google GSI script not loaded correctly.");
-                    ytSyncError = "Google script failed to load.";
-                    updateYtLoginButtonState();
-                    return;
+                    ytSyncError = "Google script failed to load."; updateYtLoginButtonState(); return;
                 }
-                 if (YT_MUSIC_CLIENT_ID.includes('PASTE_') || YT_MUSIC_CLIENT_ID.includes('YOUR_')) {
-                    ytSyncError = "Please add your YouTube Music OAuth Client ID to the code.";
-                    updateYtLoginButtonState();
-                    return;
+                 if (YT_MUSIC_CLIENT_ID.includes('YOUR_')) {
+                    ytSyncError = "YouTube Music OAuth Client ID is missing."; updateYtLoginButtonState(); return;
                 }
                 try {
                     tokenClient = google.accounts.oauth2.initTokenClient({ 
-                        client_id: YT_MUSIC_CLIENT_ID, 
-                        scope: 'https://www.googleapis.com/auth/youtube.readonly', 
-                        callback: handleAuthResponse 
+                        client_id: YT_MUSIC_CLIENT_ID, scope: 'https://www.googleapis.com/auth/youtube.readonly', callback: handleAuthResponse 
                     });
-                    gsiReady = true;
-                    loadGapiScript();
+                    gsiReady = true; loadGapiScript();
                 } catch(e) {
-                     console.error("Google GSI init error:", e);
-                     ytSyncError = "GSI Init Failed for YT Music. Check Client ID configuration.";
-                     updateYtLoginButtonState();
+                     console.error("GSI Init Failed for YT Music:", e);
+                     ytSyncError = "GSI Init Failed for YT Music. Check Client ID."; updateYtLoginButtonState();
                 }
             }
-
             async function handleAuthResponse(tokenResponse) {
                 if (tokenResponse.access_token) {
-                    gapi.client.setToken(tokenResponse);
-                    await fetchAndDisplayPlaylists();
+                    gapi.client.setToken(tokenResponse); await fetchAndDisplayPlaylists();
                 } else {
                     console.error("Auth response did not contain access token.", tokenResponse);
                     musicPlayerContainer.innerHTML = `<div class="text-center p-4">Authentication failed. Please try again.</div>`;
                 }
             }
-            
             function handleYtLogin() {
-                if (gapiReady && gsiReady && tokenClient) {
-                    tokenClient.requestAccessToken({ prompt: 'consent' });
-                } else {
-                    console.warn("Auth libraries not ready. Login blocked.");
-                }
+                if (gapiReady && gsiReady && tokenClient) tokenClient.requestAccessToken({ prompt: 'consent' });
             }
-
-            function handleLogout() {
-                gapi.client.setToken(null);
-                renderDefaultYtPlayer();
+            function handleYtLogout() {
+                gapi.client.setToken(null); renderDefaultYtPlayer();
             }
-
             async function fetchAndDisplayPlaylists() {
                 musicPlayerContainer.innerHTML = '<div class="loader mx-auto mt-16"></div>';
                 try {
@@ -1406,74 +1387,158 @@
                     if (response.result.items && response.result.items.length > 0) {
                         renderUserPlaylists(response.result.items);
                     } else {
-                        musicPlayerContainer.innerHTML = `<div class="text-center p-4">No public playlists found in your account. <button id="yt-logout-btn" class="text-sm text-red-400 hover:text-white block mx-auto mt-2">Logout</button></div>`;
-                        document.getElementById('yt-logout-btn').addEventListener('click', handleLogout);
+                        musicPlayerContainer.innerHTML = `<div class="text-center p-4">No public playlists found. <button id="yt-logout-btn" class="text-sm text-red-400 hover:text-white block mx-auto mt-2">Logout</button></div>`;
+                        document.getElementById('yt-logout-btn').addEventListener('click', handleYtLogout);
                     }
                 } catch (err) {
-                    console.error("Error fetching playlists:", err);
-                    musicPlayerContainer.innerHTML = `<div class="text-center p-4">Could not fetch playlists. Please ensure you have granted permission.</div> <button id="yt-logout-btn" class="mx-auto block text-sm text-gray-400 hover:text-white mt-2">Logout</button>`;
-                    document.getElementById('yt-logout-btn').addEventListener('click', handleLogout);
+                    console.error("Error fetching YT playlists:", err);
+                    musicPlayerContainer.innerHTML = `<div class="text-center p-4">Could not fetch playlists. <button id="yt-logout-btn" class="mx-auto block text-sm text-gray-400 hover:text-white mt-2">Logout</button></div>`;
+                    document.getElementById('yt-logout-btn').addEventListener('click', handleYtLogout);
                 }
             }
-
             function renderUserPlaylists(playlists) {
-                const defaultPlaylistId = playlists[0].id;
                 musicPlayerContainer.innerHTML = `
                     <div class="flex flex-col h-full bg-black/20 rounded-lg">
-                        <div class="w-full h-3/5 relative">
-                            <iframe id="music-player-iframe" class="rounded-t-lg w-full h-full" src="https://www.youtube.com/embed/videoseries?list=${defaultPlaylistId}" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
-                        </div>
+                        <iframe id="music-player-iframe" class="rounded-t-lg w-full h-3/5" src="https://www.youtube.com/embed/videoseries?list=${playlists[0].id}" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
                         <div class="flex-1 flex flex-col min-h-0">
-                            <div class="flex justify-between items-center p-2 border-b border-white/10">
-                                <h4 class="font-bold text-base">Your Playlists</h4>
-                                <button id="yt-logout-btn" class="text-xs text-gray-400 hover:text-white">Logout</button>
-                            </div>
-                             <p class="text-xs text-gray-400 px-2 pt-1">Showing all YouTube playlists (Music & Video)</p>
-                            <div id="yt-playlist-list" class="flex-1 overflow-y-auto p-1">
-                                ${playlists.map(p => `
-                                    <button class="yt-playlist-item w-full text-left p-2 hover:bg-white/10 rounded text-sm truncate" data-playlist-id="${p.id}" title="${p.snippet.title}">
-                                        ${p.snippet.title}
-                                    </button>
-                                `).join('')}
+                            <div class="flex justify-between items-center p-2 border-b border-white/10"><h4 class="font-bold text-base">Your Playlists</h4><button id="yt-logout-btn" class="text-xs text-gray-400 hover:text-white">Logout</button></div>
+                            <div class="flex-1 overflow-y-auto p-1">
+                                ${playlists.map(p => `<button class="yt-playlist-item w-full text-left p-2 hover:bg-white/10 rounded text-sm truncate" data-playlist-id="${p.id}" title="${p.snippet.title}">${p.snippet.title}</button>`).join('')}
                             </div>
                         </div>
                     </div>`;
-                document.getElementById('yt-logout-btn').addEventListener('click', handleLogout);
+                document.getElementById('yt-logout-btn').addEventListener('click', handleYtLogout);
                 document.querySelectorAll('.yt-playlist-item').forEach(item => {
                     item.addEventListener('click', () => { 
-                        const iframe = document.getElementById('music-player-iframe');
-                        iframe.src = `https://www.youtube.com/embed/videoseries?list=${item.dataset.playlistId}`; 
+                        document.getElementById('music-player-iframe').src = `https://www.youtube.com/embed/videoseries?list=${item.dataset.playlistId}`; 
                     });
                 });
             }
+
+            // --- Spotify Variables & Functions ---
+            const SPOTIFY_REDIRECT_URI = window.location.origin + window.location.pathname;
             
-            function renderSpotifyPlayer() {
-                musicPlayerContainer.innerHTML = `<iframe class="rounded-lg w-full h-full" src="${SPOTIFY_EMBED_URL}" title="Spotify Playlist" frameborder="0" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>`;
+            async function redirectToAuthCodeFlow() {
+                const verifier = generateCodeVerifier(128);
+                const challenge = await generateCodeChallenge(verifier);
+                localStorage.setItem("spotify_verifier", verifier);
+                const params = new URLSearchParams();
+                params.append("client_id", SPOTIFY_CLIENT_ID);
+                params.append("response_type", "code");
+                params.append("redirect_uri", SPOTIFY_REDIRECT_URI);
+                params.append("scope", "playlist-read-private playlist-read-collaborative");
+                params.append("code_challenge_method", "S256");
+                params.append("code_challenge", challenge);
+                document.location = `https://accounts.spotify.com/authorize?${params.toString()}`;
+            }
+            async function getSpotifyToken(code) {
+                const verifier = localStorage.getItem("spotify_verifier");
+                const params = new URLSearchParams();
+                params.append("client_id", SPOTIFY_CLIENT_ID);
+                params.append("grant_type", "authorization_code");
+                params.append("code", code);
+                params.append("redirect_uri", SPOTIFY_REDIRECT_URI);
+                params.append("code_verifier", verifier);
+                try {
+                    const result = await fetch("https://accounts.spotify.com/api/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: params });
+                    const { access_token } = await result.json();
+                    localStorage.setItem('spotify_access_token', access_token);
+                    await renderSpotifyPlayer();
+                } catch(e) { console.error("Could not get Spotify token", e); }
+            }
+            async function fetchSpotifyPlaylists() {
+                const token = localStorage.getItem('spotify_access_token');
+                if (!token) return;
+                try {
+                    const result = await fetch("https://api.spotify.com/v1/me/playlists", { method: "GET", headers: { Authorization: `Bearer ${token}` } });
+                    if (result.status === 401) { handleSpotifyLogout(); return; } // Token expired
+                    const data = await result.json();
+                    renderSpotifyUserPlaylists(data.items);
+                } catch(e) { console.error("Could not fetch Spotify playlists", e); }
+            }
+            function handleSpotifyLogout() {
+                localStorage.removeItem('spotify_access_token');
+                renderSpotifyPlayer();
+            }
+            function renderSpotifyUserPlaylists(playlists) {
+                 musicPlayerContainer.innerHTML = `
+                    <div class="flex flex-col h-full bg-black/20 rounded-lg">
+                        <iframe id="spotify-player-iframe" class="rounded-t-lg w-full h-3/5" src="https://open.spotify.com/embed/playlist/${playlists[0].id}" frameborder="0" allow="encrypted-media"></iframe>
+                        <div class="flex-1 flex flex-col min-h-0">
+                            <div class="flex justify-between items-center p-2 border-b border-white/10"><h4 class="font-bold text-base">Your Playlists</h4><button id="spotify-logout-btn" class="text-xs text-gray-400 hover:text-white">Logout</button></div>
+                            <div class="flex-1 overflow-y-auto p-1">
+                                ${playlists.map(p => `<button class="spotify-playlist-item w-full text-left p-2 hover:bg-white/10 rounded text-sm truncate" data-playlist-id="${p.id}" title="${p.name}">${p.name}</button>`).join('')}
+                            </div>
+                        </div>
+                    </div>`;
+                document.getElementById('spotify-logout-btn').addEventListener('click', handleSpotifyLogout);
+                document.querySelectorAll('.spotify-playlist-item').forEach(item => {
+                    item.addEventListener('click', () => { 
+                        document.getElementById('spotify-player-iframe').src = `https://open.spotify.com/embed/playlist/${item.dataset.playlistId}`; 
+                    });
+                });
+            }
+
+            // --- Player Rendering Functions ---
+            async function renderSpotifyPlayer() {
                 ytMusicBtn.classList.remove('ring-2', 'ring-white');
                 spotifyBtn.classList.add('ring-2', 'ring-white');
-            }
-            
-            function renderDefaultYtPlayer() {
-                musicPlayerContainer.innerHTML = `<div class="flex flex-col items-center justify-center h-full gap-4"> <iframe class="rounded-lg w-full h-4/5" src="${YOUTUBE_DEFAULT_EMBED_URL}" title="YouTube Music Mix" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe> <button id="yt-login-btn" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600" disabled>Loading Sync...</button> </div>`;
-                const loginBtn = document.getElementById('yt-login-btn');
-                if(loginBtn) {
-                    loginBtn.addEventListener('click', handleYtLogin);
-                    updateYtLoginButtonState();
+                const token = localStorage.getItem('spotify_access_token');
+                if (token) {
+                    musicPlayerContainer.innerHTML = '<div class="loader mx-auto mt-16"></div>';
+                    await fetchSpotifyPlaylists();
+                } else {
+                    const isClientIdSet = SPOTIFY_CLIENT_ID && !SPOTIFY_CLIENT_ID.includes('YOUR_');
+                    const savedSpotifyUrl = localStorage.getItem('spotifyPlaylistUrl') || 'https://open.spotify.com/embed/playlist/37i9dQZF1DX4sWSpwq3LiO';
+                    musicPlayerContainer.innerHTML = `
+                        <div class="flex flex-col h-full gap-2">
+                            <iframe id="spotify-iframe" class="rounded-lg w-full flex-1" src="${savedSpotifyUrl}" title="Spotify Playlist" frameborder="0" allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture" loading="lazy"></iframe>
+                            <div class="flex flex-col gap-3 pt-2 border-t border-white/10">
+                                <div class="flex gap-2">
+                                    <input type="text" id="spotify-link-input" placeholder="Paste Public Playlist Link" class="w-full bg-[#2E3338] p-2 rounded border border-[#4A5568] focus:outline-none focus:ring-2 focus:ring-green-400 text-sm">
+                                    <button id="spotify-link-save-btn" class="bg-[#1DB954] text-white px-3 py-1 rounded hover:bg-[#1aaf54] text-sm">Set</button>
+                                </div>
+                                <button id="spotify-login-btn" class="w-full bg-[#1DB954] text-white px-4 py-2 rounded hover:bg-[#1aaf54] text-sm ${!isClientIdSet ? 'opacity-50 cursor-not-allowed' : ''}" ${!isClientIdSet ? 'disabled' : ''}>Sync Your Spotify Playlists</button>
+                                ${!isClientIdSet ? '<p class="text-xs text-center text-gray-400">Add Spotify Client ID in code to enable sync.</p>' : ''}
+                            </div>
+                        </div>`;
+                    if (isClientIdSet) document.getElementById('spotify-login-btn').addEventListener('click', redirectToAuthCodeFlow);
+                    document.getElementById('spotify-link-save-btn').addEventListener('click', () => {
+                        const input = document.getElementById('spotify-link-input');
+                        const link = input.value.trim();
+                        if (link.startsWith('https://open.spotify.com/playlist/')) {
+                            const playlistId = new URL(link).pathname.split('/').pop();
+                            if (playlistId) {
+                                const embedUrl = `https://open.spotify.com/embed/playlist/${playlistId}`;
+                                document.getElementById('spotify-iframe').src = embedUrl;
+                                localStorage.setItem('spotifyPlaylistUrl', embedUrl);
+                                input.value = ''; input.placeholder = "Playlist updated!";
+                            }
+                        }
+                    });
                 }
+            }
+            function renderDefaultYtPlayer() {
                 spotifyBtn.classList.remove('ring-2', 'ring-white');
                 ytMusicBtn.classList.add('ring-2', 'ring-white');
+                musicPlayerContainer.innerHTML = `<div class="flex flex-col items-center justify-center h-full gap-4"> <iframe class="rounded-lg w-full h-4/5" src="${YOUTUBE_DEFAULT_EMBED_URL}" title="YouTube Music Mix" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe> <button id="yt-login-btn" class="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600" disabled>Loading Sync...</button> </div>`;
+                const loginBtn = document.getElementById('yt-login-btn');
+                if (loginBtn) { loginBtn.addEventListener('click', handleYtLogin); updateYtLoginButtonState(); }
             }
 
             // --- Initialization Logic ---
+            const params = new URLSearchParams(window.location.search);
+            if (params.get("code")) {
+                const isSpotify = !params.get("scope"); // Google's redirect includes a 'scope' param
+                if (isSpotify) {
+                    getSpotifyToken(params.get("code"));
+                    history.replaceState({}, document.title, window.location.pathname);
+                }
+            }
             spotifyBtn.addEventListener('click', renderSpotifyPlayer);
             ytMusicBtn.addEventListener('click', renderDefaultYtPlayer);
-
-            if (window.googleGsiIsReady) {
-                initializeGsiClient();
-            } else {
-                window.addEventListener('google-gsi-loaded', initializeGsiClient, { once: true });
-            }
-
+            if (window.googleGsiIsReady) initializeGsiClient();
+            else window.addEventListener('google-gsi-loaded', initializeGsiClient, { once: true });
             renderDefaultYtPlayer();
         }
 
