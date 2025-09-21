@@ -1300,7 +1300,7 @@
             const spotifyBtn = document.getElementById('spotify-btn');
             const ytMusicBtn = document.getElementById('yt-music-btn');
             const musicPlayerContainer = document.getElementById('music-player-container');
-            const YOUTUBE_DEFAULT_EMBED_URL = 'https://www.youtube.com/embed/videoseries?list=PLx0sYbCqOb8TAYb-i2J_a_a-2IUN-p2w-';
+            const YOUTUBE_DEFAULT_EMBED_URL = 'https://www.youtube.com/embed/jfKfPfyJRdk';
             
             // --- YouTube Music Variables & Functions ---
             let tokenClient;
@@ -1371,58 +1371,111 @@
             function handleYtLogout() {
                 gapi.client.setToken(null); renderDefaultYtPlayer();
             }
-            async function fetchAndDisplayPlaylists() {
-                musicPlayerContainer.innerHTML = '<div class="loader mx-auto mt-16"></div>';
+
+            async function fetchPlaylistItems(playlistId, container) {
                 try {
-                    const response = await gapi.client.youtube.playlists.list({ part: 'snippet', mine: true, maxResults: 50 });
-                    if (response.result.items && response.result.items.length > 0) {
-                        renderUserPlaylists(response.result.items);
-                    } else {
-                        musicPlayerContainer.innerHTML = `<div class="text-center p-4">No public playlists found. <button id="yt-logout-btn" class="text-sm text-red-400 hover:text-white block mx-auto mt-2">Logout</button></div>`;
-                        document.getElementById('yt-logout-btn').addEventListener('click', handleYtLogout);
-                    }
+                    const response = await gapi.client.youtube.playlistItems.list({
+                        part: 'snippet',
+                        playlistId: playlistId,
+                        maxResults: 50
+                    });
+                    renderPlaylistItems(response.result.items, container);
                 } catch (err) {
-                    console.error("Error fetching YT playlists:", err);
-                    musicPlayerContainer.innerHTML = `<div class="text-center p-4">Could not fetch playlists. <button id="yt-logout-btn" class="mx-auto block text-sm text-gray-400 hover:text-white mt-2">Logout</button></div>`;
-                    document.getElementById('yt-logout-btn').addEventListener('click', handleYtLogout);
+                    console.error("Error fetching playlist items:", err);
+                    container.innerHTML = `<p class="text-xs text-gray-400 p-2">Could not load videos.</p>`;
                 }
             }
 
-            function renderUserPlaylists(playlists) {
+            function renderPlaylistItems(items, container) {
+                const videoList = document.createElement('div');
+                videoList.className = "space-y-2";
+
+                if (!items || items.length === 0) {
+                     container.innerHTML = `<p class="text-xs text-gray-400 p-2">This playlist is empty.</p>`;
+                     return;
+                }
+
+                videoList.innerHTML = items.map(item => {
+                    const snippet = item.snippet;
+                    const videoId = snippet.resourceId.videoId;
+                    const title = snippet.title;
+                    const thumbnailUrl = snippet.thumbnails.default.url;
+                    // Skip deleted or private videos
+                    if (title === "Deleted video" || title === "Private video") return '';
+                    
+                    return `
+                        <button class="yt-video-item flex items-center gap-2 w-full text-left p-1.5 hover:bg-white/10 rounded transition-colors duration-200" data-video-id="${videoId}">
+                            <img src="${thumbnailUrl}" class="w-10 h-10 rounded object-cover" alt="Video thumbnail">
+                            <span class="flex-1 text-xs font-medium truncate">${title}</span>
+                        </button>
+                    `;
+                }).join('');
+
+                container.innerHTML = '';
+                container.appendChild(videoList);
+
+                container.querySelectorAll('.yt-video-item').forEach(item => {
+                    item.addEventListener('click', () => {
+                        document.getElementById('music-player-iframe').src = `https://www.youtube.com/embed/${item.dataset.videoId}?autoplay=1`;
+                    });
+                });
+            }
+
+            async function renderUserPlaylists(playlists) {
                 musicPlayerContainer.innerHTML = `
                     <div class="flex flex-col h-full bg-black/20 rounded-lg">
-                        <div class="w-full h-3/5 relative">
+                        <div class="w-full h-2/5 relative">
                              <iframe id="music-player-iframe" class="rounded-t-lg w-full h-full" src="https://www.youtube.com/embed/videoseries?list=${playlists[0].id}" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
                         </div>
-                        <div class="flex-1 flex flex-col min-h-0">
-                            <div class="flex justify-between items-center p-2 border-b border-white/10">
-                                <h4 class="font-bold text-base">Your Playlists</h4>
-                                <button id="yt-logout-btn" class="text-xs text-gray-400 hover:text-white">Logout</button>
+                        <div class="flex-1 flex flex-row min-h-0">
+                            <!-- Left: Playlist List -->
+                            <div class="w-1/2 flex flex-col border-r border-white/10">
+                                <div class="flex justify-between items-center p-2 border-b border-white/10">
+                                    <h4 class="font-bold text-base truncate">Your Playlists</h4>
+                                    <button id="yt-logout-btn" class="text-xs text-gray-400 hover:text-white flex-shrink-0">Logout</button>
+                                </div>
+                                <div id="yt-playlist-list" class="flex-1 overflow-y-auto p-1 space-y-1">
+                                    ${playlists.map((p, index) => `
+                                        <button class="yt-playlist-item flex items-center gap-2 w-full text-left p-1.5 hover:bg-white/10 rounded transition-colors duration-200 ${index === 0 ? 'bg-white/20' : ''}" data-playlist-id="${p.id}" title="${p.snippet.title}">
+                                            <img src="${p.snippet.thumbnails.default.url}" class="w-10 h-10 rounded object-cover" alt="Playlist thumbnail">
+                                            <span class="flex-1 text-xs font-medium truncate">${p.snippet.title}</span>
+                                        </button>
+                                    `).join('')}
+                                </div>
                             </div>
-                            <div id="yt-playlist-list" class="flex-1 overflow-y-auto p-2 space-y-2">
-                                ${playlists.map((p, index) => `
-                                    <button class="yt-playlist-item flex items-center gap-3 w-full text-left p-2 hover:bg-white/10 rounded transition-colors duration-200 ${index === 0 ? 'bg-white/20' : ''}" data-playlist-id="${p.id}" title="${p.snippet.title}">
-                                        <img src="${p.snippet.thumbnails.default.url}" class="w-12 h-12 rounded object-cover" alt="Playlist thumbnail">
-                                        <span class="flex-1 text-sm font-medium truncate">${p.snippet.title}</span>
-                                    </button>
-                                `).join('')}
+                            <!-- Right: Video List -->
+                            <div class="w-1/2 flex flex-col">
+                                 <div class="p-2 border-b border-white/10">
+                                     <h4 id="yt-video-list-header" class="font-bold text-base truncate">${playlists[0].snippet.title}</h4>
+                                 </div>
+                                 <div id="yt-video-list" class="flex-1 overflow-y-auto p-1">
+                                     <div class="loader"></div>
+                                 </div>
                             </div>
                         </div>
                     </div>`;
 
                 document.getElementById('yt-logout-btn').addEventListener('click', handleYtLogout);
+                const videoListContainer = document.getElementById('yt-video-list');
+                const videoListHeader = document.getElementById('yt-video-list-header');
                 
                 const playlistItems = document.querySelectorAll('.yt-playlist-item');
                 playlistItems.forEach(item => {
                     item.addEventListener('click', () => { 
-                        // Remove active state from all items
                         playlistItems.forEach(el => el.classList.remove('bg-white/20'));
-                        // Add active state to clicked item
                         item.classList.add('bg-white/20');
-                        // Update the iframe src
-                        document.getElementById('music-player-iframe').src = `https://www.youtube.com/embed/videoseries?list=${item.dataset.playlistId}`; 
+                        
+                        const playlistId = item.dataset.playlistId;
+                        const playlistTitle = item.getAttribute('title');
+
+                        videoListHeader.textContent = playlistTitle;
+                        videoListContainer.innerHTML = '<div class="loader"></div>';
+                        document.getElementById('music-player-iframe').src = `https://www.youtube.com/embed/videoseries?list=${playlistId}`; 
+                        fetchPlaylistItems(playlistId, videoListContainer);
                     });
                 });
+                // Initially load videos for the first playlist
+                fetchPlaylistItems(playlists[0].id, videoListContainer);
             }
 
             // --- Spotify Variables & Functions ---
@@ -1778,19 +1831,99 @@
 
         function displayDummyHealthData() {
             healthStatsContainer.innerHTML = ''; // Clear previous
-            healthStatsContainer.appendChild(renderHealthGauge('steps', 'Steps', 7543, 10000));
-            healthStatsContainer.appendChild(renderHealthGauge('heart', 'BPM', 68, 120));
-            healthStatsContainer.appendChild(renderHealthGauge('sleep', 'Hours', 7.5, 8));
+            healthStatsContainer.appendChild(renderHealthGauge('steps', 'Steps', 0, 10000));
+            healthStatsContainer.appendChild(renderHealthGauge('heart', 'BPM', 0, 120));
+            healthStatsContainer.appendChild(renderHealthGauge('sleep', 'Hours', 0, 8));
         }
 
-        function initializeHealthWidget() {
-            displayDummyHealthData();
+       async function fetchGoogleFitData(accessToken) {
+            const FIT_API_URL = 'https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate';
+            const now = new Date();
+            const startTime = new Date(now.getFullYear(), now.getMonth(), now.getDate() -1, 0, 0, 0);
+            const endTime = new Date();
 
-            if (GOOGLE_FIT_CLIENT_ID.includes('PASTE_') || GOOGLE_FIT_CLIENT_ID.includes('YOUR_')) {
-                googleFitAuthContainer.innerHTML = `<p class="text-sm text-gray-400">Add Google Fit Client ID in code to connect.</p>`;
+            const requestBody = {
+                aggregateBy: [{
+                    dataTypeName: "com.google.step_count.delta",
+                    dataSourceId: "derived:com.google.step_count.delta:com.google.android.gms:estimated_steps"
+                }, {
+                    dataTypeName: "com.google.heart_rate.bpm",
+                    dataSourceId: "derived:com.google.heart_rate.bpm:com.google.android.gms:merge_heart_rate_bpm"
+                }, {
+                    dataTypeName: "com.google.sleep.segment"
+                }],
+                bucketByTime: { durationMillis: 86400000 }, // 24 hours
+                startTimeMillis: startTime.getTime(),
+                endTimeMillis: endTime.getTime()
+            };
+
+            try {
+                const response = await fetch(FIT_API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestBody)
+                });
+
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        // Token expired or revoked
+                        localStorage.removeItem('googleFitToken');
+                        initializeHealthWidget(); // Show login button again
+                    }
+                    throw new Error(`Google Fit API error: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                
+                // Process and display data
+                healthStatsContainer.innerHTML = '';
+                const stepBucket = data.bucket[0].dataset[0].point[0];
+                const steps = stepBucket?.value[0]?.intVal || 0;
+
+                const heartRateBucket = data.bucket[0].dataset[1].point[0];
+                const heartRate = Math.round(heartRateBucket?.value[0]?.fpVal || 0);
+                
+                const sleepBucket = data.bucket[0].dataset[2].point;
+                let totalSleepMinutes = 0;
+                if(sleepBucket.length > 0){
+                    sleepBucket.forEach(point => {
+                         // Sleep type 2 is light sleep, 4 is deep sleep
+                        if(point.value[0].intVal === 2 || point.value[0].intVal === 4){
+                           totalSleepMinutes += (point.endTimeNanos - point.startTimeNanos) / 60000000;
+                        }
+                    });
+                }
+                const sleepHours = (totalSleepMinutes / 60).toFixed(1);
+
+                healthStatsContainer.appendChild(renderHealthGauge('steps', 'Steps', steps, 10000));
+                healthStatsContainer.appendChild(renderHealthGauge('heart', 'BPM', heartRate, 120));
+                healthStatsContainer.appendChild(renderHealthGauge('sleep', 'Hours', parseFloat(sleepHours), 8));
+
+
+            } catch (error) {
+                console.error("Failed to fetch Google Fit data:", error);
+                displayDummyHealthData(); // Show dummy data on error
+            }
+        }
+
+
+        function initializeHealthWidget() {
+            const fitToken = localStorage.getItem('googleFitToken');
+            
+            if (fitToken) {
+                googleFitAuthContainer.innerHTML = `<p class="text-sm text-green-400">Syncing Google Fit...</p>`;
+                fetchGoogleFitData(fitToken);
             } else {
-                googleFitAuthContainer.innerHTML = `<button id="google-fit-login-btn" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Connect Google Fit</button>`;
-                document.getElementById('google-fit-login-btn').addEventListener('click', handleFitLogin);
+                 displayDummyHealthData();
+                if (GOOGLE_FIT_CLIENT_ID.includes('PASTE_') || GOOGLE_FIT_CLIENT_ID.includes('YOUR_')) {
+                    googleFitAuthContainer.innerHTML = `<p class="text-sm text-gray-400">Add Google Fit Client ID in code to connect.</p>`;
+                } else {
+                    googleFitAuthContainer.innerHTML = `<button id="google-fit-login-btn" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Connect Google Fit</button>`;
+                    document.getElementById('google-fit-login-btn').addEventListener('click', handleFitLogin);
+                }
             }
         }
 
@@ -1814,9 +1947,9 @@
 
         async function handleFitAuthResponse(tokenResponse) {
             if (tokenResponse.access_token) {
+                localStorage.setItem('googleFitToken', tokenResponse.access_token);
                 googleFitAuthContainer.innerHTML = `<p class="text-sm text-green-400">Google Fit Connected!</p>`;
-                // TODO: Add functions here to fetch and display real data
-                // e.g., fetchStepsData(tokenResponse.access_token);
+                fetchGoogleFitData(tokenResponse.access_token);
             } else {
                 googleFitAuthContainer.innerHTML = `<p class="text-sm text-red-400">Failed to connect Google Fit.</p>`;
             }
