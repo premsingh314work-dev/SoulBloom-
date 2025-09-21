@@ -10,6 +10,11 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- Leaflet.js for Maps -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    
     <!-- 
       The Google Sign-In script is loaded asynchronously. 
       The 'onGoogleScriptsLoad' function will be our single entry point
@@ -833,7 +838,8 @@
         const YT_MUSIC_CLIENT_ID = '186638354534-sc0ecemspj32eqkqk3u67ma2fe87gfnj.apps.googleusercontent.com';
         const GOOGLE_FIT_CLIENT_ID = '691627541266-nup7p5ked390epqje1vbh4eova6d7lpc.apps.googleusercontent.com';
         const YOUTUBE_API_KEY = 'AIzaSyC4isDfYT5JO64BtH1lvBP0-etVBXhAThA';
-        const GOOGLE_MAPS_API_KEY = 'AIzaSyDJcx25l-e6uD-5aw2fybhxj4AxiriS4c8';
+        const GEMINI_API_KEY = "AIzaSyDzX6NrBh-02my-Sll8stjoUYffBkgVB4Y";
+
         // --- END OF ACTION REQUIRED ---
 
         // --- Firebase Setup ---
@@ -940,11 +946,13 @@
 
         // --- Gemini API Integration ---
         const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent`;
-        const GEMINI_API_KEY = "AIzaSyDzX6NrBh-02my-Sll8stjoUYffBkgVB4Y";
-
+        
         async function getGeminiResponse(prompt, customSystemInstruction = null) {
             const defaultSystemInstruction = "You are a helpful assistant. Important: You must not provide any medical, clinical, or therapeutic advice. Your goal is to be supportive and provide general information or creative ideas. If the user seems to be in distress or asks for advice related to health or mental well-being, you must gently decline and suggest they consult a qualified professional.";
             try {
+                 if (!GEMINI_API_KEY || GEMINI_API_KEY.includes('YOUR_')) {
+                    return "Sorry, the AI Assistant is not configured. Please add a Gemini API Key in the code.";
+                }
                 const payload = {
                     contents: [{ parts: [{ text: prompt }] }],
                     systemInstruction: { parts: [{ text: customSystemInstruction || defaultSystemInstruction }] },
@@ -1808,38 +1816,37 @@
             }
         });
 
-        // --- User Health Logic ---
+        // --- User Health Logic (Restored and Improved) ---
         const healthStatsContainer = document.getElementById('health-stats-container');
         const googleFitAuthContainer = document.getElementById('google-fit-auth-container');
         let fitTokenClient;
 
         function renderHealthGauge(id, label, value, goal) {
+            const container = document.createElement('div');
+            container.className = 'flex flex-col items-center';
+
             const percent = Math.min((value / goal) * 100, 100);
             const angle = (percent / 100) * 180 - 90; // -90 to 90 degrees
 
             const gaugeHTML = `
-                <div class="flex flex-col items-center">
-                    <div class="health-gauge">
-                        <div class="gauge-arc">
-                            <div class="gauge-arc-segments">
-                                <div class="gauge-arc-mask"></div>
-                            </div>
-                        </div>
-                        <div class="gauge-needle-container" style="--needle-angle: ${angle}deg;">
-                            <div class="gauge-needle"></div>
+                <div class="health-gauge">
+                    <div class="gauge-arc">
+                        <div class="gauge-arc-segments">
+                            <div class="gauge-arc-mask"></div>
                         </div>
                     </div>
-                    <div class="gauge-text">
-                        <span class="gauge-value">${value.toLocaleString()}</span>
-                        <span class="gauge-label">${label}</span>
+                    <div class="gauge-needle-container" style="--needle-angle: ${angle}deg;">
+                        <div class="gauge-needle"></div>
                     </div>
                 </div>
+                <div class="gauge-text">
+                    <span class="gauge-value">${value.toLocaleString()}</span>
+                    <span class="gauge-label">${label}</span>
+                </div>
             `;
-            const gaugeElement = document.createElement('div');
-            gaugeElement.innerHTML = gaugeHTML;
-            return gaugeElement;
+            container.innerHTML = gaugeHTML;
+            return container;
         }
-
 
         function displayDummyHealthData() {
             healthStatsContainer.innerHTML = ''; // Clear previous
@@ -1848,10 +1855,10 @@
             healthStatsContainer.appendChild(renderHealthGauge('sleep', 'Hours', 0, 8));
         }
 
-       async function fetchGoogleFitData(accessToken) {
+        async function fetchGoogleFitData(accessToken) {
             const FIT_API_URL = 'https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate';
             const now = new Date();
-            const startTime = new Date(now.getFullYear(), now.getMonth(), now.getDate() -1, 0, 0, 0);
+            const startTime = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 0, 0, 0);
             const endTime = new Date();
 
             const requestBody = {
@@ -1872,57 +1879,59 @@
             try {
                 const response = await fetch(FIT_API_URL, {
                     method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${accessToken}`,
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
                     body: JSON.stringify(requestBody)
                 });
 
                 if (!response.ok) {
-                    if (response.status === 401) {
-                        localStorage.removeItem('googleFitToken');
-                        initializeHealthWidget();
-                    }
+                    if (response.status === 401) localStorage.removeItem('googleFitToken');
                     throw new Error(`Google Fit API error: ${response.statusText}`);
                 }
-
                 const data = await response.json();
-                
                 healthStatsContainer.innerHTML = '';
+
                 const stepBucket = data.bucket[0].dataset[0].point[0];
                 const steps = stepBucket?.value[0]?.intVal || 0;
+                const stepGauge = renderHealthGauge('steps', 'Steps', steps, 10000);
+                healthStatsContainer.appendChild(stepGauge);
+                if (steps === 0) {
+                    const noDataMsg = document.createElement('p'); noDataMsg.className = 'text-xs text-gray-400 -mt-2'; noDataMsg.textContent = 'No step data.';
+                    stepGauge.appendChild(noDataMsg);
+                }
 
                 const heartRateBucket = data.bucket[0].dataset[1].point[0];
                 const heartRate = Math.round(heartRateBucket?.value[0]?.fpVal || 0);
-                
+                const heartGauge = renderHealthGauge('heart', 'BPM', heartRate, 120);
+                healthStatsContainer.appendChild(heartGauge);
+                 if (heartRate === 0) {
+                    const noDataMsg = document.createElement('p'); noDataMsg.className = 'text-xs text-gray-400 -mt-2'; noDataMsg.textContent = 'No heart rate data.';
+                    heartGauge.appendChild(noDataMsg);
+                }
+
                 const sleepBucket = data.bucket[0].dataset[2].point;
                 let totalSleepMinutes = 0;
-                if(sleepBucket && sleepBucket.length > 0){
+                if (sleepBucket && sleepBucket.length > 0) {
                     sleepBucket.forEach(point => {
-                        if(point.value[0].intVal === 2 || point.value[0].intVal === 4){
-                           totalSleepMinutes += (point.endTimeNanos - point.startTimeNanos) / 60000000000;
+                        if (point.value[0].intVal === 2 || point.value[0].intVal === 4) { // Light or Deep sleep
+                            totalSleepMinutes += (point.endTimeNanos - point.startTimeNanos) / 60000000000;
                         }
                     });
                 }
-                const sleepHours = (totalSleepMinutes / 60).toFixed(1);
+                const sleepHours = parseFloat((totalSleepMinutes / 60).toFixed(1));
+                const sleepGauge = renderHealthGauge('sleep', 'Hours', sleepHours, 8);
+                healthStatsContainer.appendChild(sleepGauge);
+                 if (sleepHours === 0) {
+                    const noDataMsg = document.createElement('p'); noDataMsg.className = 'text-xs text-gray-400 -mt-2'; noDataMsg.textContent = 'No sleep data.';
+                    sleepGauge.appendChild(noDataMsg);
+                }
 
-                healthStatsContainer.appendChild(renderHealthGauge('steps', 'Steps', steps, 10000));
-                healthStatsContainer.appendChild(renderHealthGauge('heart', 'BPM', heartRate, 120));
-                healthStatsContainer.appendChild(renderHealthGauge('sleep', 'Hours', parseFloat(sleepHours), 8));
-
+                googleFitAuthContainer.innerHTML = `<p class="text-sm text-green-400">Synced just now.</p>`;
 
             } catch (error) {
                 console.error("Failed to fetch Google Fit data:", error);
-                 if (error.message.includes("Forbidden")) {
-                     googleFitAuthContainer.innerHTML = `<p class="text-sm text-red-400">Error: Access denied. Please ensure the <a href="https://console.cloud.google.com/apis/library/fitness.googleapis.com" target="_blank" class="underline">Fitness API</a> is enabled in your Google Cloud project.</p>`;
-                } else {
-                    googleFitAuthContainer.innerHTML = `<p class="text-sm text-red-400">Could not fetch data.</p>`;
-                }
-                displayDummyHealthData();
+                initializeHealthWidget(); // Reset widget to show login button on error
             }
         }
-
 
         function initializeHealthWidget() {
             const fitToken = localStorage.getItem('googleFitToken');
@@ -1937,8 +1946,8 @@
                 googleFitAuthContainer.innerHTML = `<p class="text-sm text-green-400">Syncing Google Fit...</p>`;
                 fetchGoogleFitData(fitToken);
             } else {
-                 displayDummyHealthData();
-                if (GOOGLE_FIT_CLIENT_ID.includes('PASTE_') || GOOGLE_FIT_CLIENT_ID.includes('YOUR_')) {
+                displayDummyHealthData();
+                if (GOOGLE_FIT_CLIENT_ID.includes('YOUR_')) {
                     googleFitAuthContainer.innerHTML = `<p class="text-sm text-gray-400">Add Google Fit Client ID in code to connect.</p>`;
                 } else {
                     googleFitAuthContainer.innerHTML = `<button id="google-fit-login-btn" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Connect Google Fit</button>`;
@@ -1949,8 +1958,7 @@
 
         function handleFitLogin() {
             if (typeof google === 'undefined' || !google.accounts) {
-                alert("Google scripts not loaded yet. Please try again.");
-                return;
+                alert("Google scripts not loaded yet. Please try again."); return;
             }
             try {
                 fitTokenClient = google.accounts.oauth2.initTokenClient({
@@ -1959,7 +1967,7 @@
                     callback: handleFitAuthResponse,
                 });
                 fitTokenClient.requestAccessToken({ prompt: 'consent' });
-            } catch(e) {
+            } catch (e) {
                 console.error("GSI Init Failed for Google Fit. Check Client ID.", e);
                 googleFitAuthContainer.innerHTML = `<p class="text-sm text-red-400">Error: Check Google Fit Client ID.</p>`;
             }
@@ -1969,11 +1977,12 @@
             if (tokenResponse.access_token) {
                 localStorage.setItem('googleFitToken', tokenResponse.access_token);
                 googleFitAuthContainer.innerHTML = `<p class="text-sm text-green-400">Syncing Google Fit...</p>`;
-                fetchGoogleFitData(tokenResponse.access_token);
+                await fetchGoogleFitData(tokenResponse.access_token);
             } else {
                 googleFitAuthContainer.innerHTML = `<p class="text-sm text-red-400">Failed to connect Google Fit.</p>`;
             }
         }
+
 
         // --- Journaling Logic ---
         const shadowWorkPromptBtn = document.getElementById('shadow-work-prompt-btn');
@@ -2212,73 +2221,74 @@
             if (e.key === 'Enter') handleHumataSendMessage();
         });
 
-        // --- Serenity Map Logic ---
+        // --- Serenity Map Logic (Improved with Gemini) ---
         let map;
-        let placesService;
-        let infoWindow;
+        let mapMarkers = [];
 
         function initializeSerenityMap() {
-             if (GOOGLE_MAPS_API_KEY.includes('YOUR_')) {
-                 document.getElementById('map').innerHTML = `<div class="flex items-center justify-center h-full text-gray-400">Please add a Google Maps API Key to use this feature.</div>`;
-                 return;
-             }
-             if (typeof google === 'undefined' || typeof google.maps === 'undefined') {
-                 console.warn("Google Maps script not loaded yet. Map feature will be unavailable.");
-                 return;
-             }
-
-             const indiaCenter = { lat: 20.5937, lng: 78.9629 };
-             map = new google.maps.Map(document.getElementById("map"), {
-                 center: indiaCenter,
-                 zoom: 5,
-             });
-
-             infoWindow = new google.maps.InfoWindow();
-
-             document.getElementById('location-search-btn').addEventListener('click', () => {
-                 const query = document.getElementById('location-search-input').value;
-                 if (query) {
-                     searchPlaces(query);
-                 }
-             });
-        }
-        
-        function searchPlaces(query) {
-             const request = {
-                 query: `parks, cafes, libraries, quiet places in ${query}`,
-                 fields: ["name", "geometry", "formatted_address"],
-             };
-
-             placesService = new google.maps.places.PlacesService(map);
-             
-             placesService.textSearch(request, (results, status) => {
-                 if (status === google.maps.places.PlacesServiceStatus.OK && results) {
-                     map.setCenter(results[0].geometry.location);
-                     map.setZoom(12);
-
-                     for (let i = 0; i < results.length; i++) {
-                         createMarker(results[i]);
-                     }
-                 } else {
-                     alert("Could not find any locations for that search.");
-                 }
-             });
-        }
-        
-        function createMarker(place) {
-             if (!place.geometry || !place.geometry.location) return;
-
-             const marker = new google.maps.Marker({
-                 map,
-                 position: place.geometry.location,
-             });
-
-             google.maps.event.addListener(marker, "click", () => {
-                 infoWindow.setContent(`<strong>${place.name}</strong><br>${place.formatted_address}`);
-                 infoWindow.open(map, marker);
-             });
+            if (typeof L === 'undefined') {
+                document.getElementById('map').innerHTML = `<div class="flex items-center justify-center h-full text-red-400 p-4 text-center">Error: Could not load Leaflet mapping library.</div>`;
+                return;
+            }
+            try {
+                var container = L.DomUtil.get('map');
+                if(container != null){ container._leaflet_id = null; }
+                map = L.map('map').setView([20.5937, 78.9629], 5);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    maxZoom: 19,
+                    attribution: '© <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                }).addTo(map);
+                document.getElementById('location-search-btn').addEventListener('click', () => {
+                    const query = document.getElementById('location-search-input').value;
+                    if (query) searchPlaces(query);
+                });
+            } catch (e) {
+                console.error("Leaflet map initialization failed:", e);
+                document.getElementById('map').innerHTML = `<div class="flex items-center justify-center h-full text-red-400 p-4 text-center">Map initialization failed.</div>`;
+            }
         }
 
+        function clearMapMarkers() {
+            mapMarkers.forEach(marker => map.removeLayer(marker));
+            mapMarkers = [];
+        }
+
+        async function searchPlaces(query) {
+            clearMapMarkers();
+            const searchButton = document.getElementById('location-search-btn');
+            searchButton.disabled = true;
+            searchButton.innerHTML = '<div class="loader" style="width:20px; height:20px; border-width: 2px; margin: auto;"></div>';
+
+            const prompt = `Find 5 to 7 serene, quiet public places like parks, libraries, or calm cafes near ${query}, India. Respond with ONLY a valid JSON array of objects. Each object must have "name", "lat", and "lon" properties. Example: [{"name": "Some Park", "lat": 28.123, "lon": 77.456}]`;
+
+            try {
+                const responseText = await getGeminiResponse(prompt, "You are a helpful location finding assistant. You only respond with JSON.");
+                
+                // Clean the response to ensure it's valid JSON
+                const cleanedResponse = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+                const places = JSON.parse(cleanedResponse);
+
+                if (places && places.length > 0) {
+                    map.setView([places[0].lat, places[0].lon], 13);
+                    places.forEach(createMapMarker);
+                } else {
+                    alert('The AI could not find any specific quiet locations. Please try a different search.');
+                }
+            } catch (error) {
+                console.error("Error parsing Gemini response or searching places:", error);
+                alert("An error occurred while searching. The AI might have returned an invalid format. Please try again.");
+            } finally {
+                searchButton.disabled = false;
+                searchButton.textContent = 'Search';
+            }
+        }
+
+        function createMapMarker(place) {
+            if (!place.lat || !place.lon) return;
+            const marker = L.marker([place.lat, place.lon]).addTo(map);
+            marker.bindPopup(`<b>${place.name}</b>`);
+            mapMarkers.push(marker);
+        }
 
         // --- General Initialization ---
         document.addEventListener('DOMContentLoaded', async () => {
@@ -2287,6 +2297,7 @@
             initializeMusicPlayer();
             loadAiChatHistory();
             populateEmotePicker();
+            initializeSerenityMap();
 
             const chatroomBtns = document.querySelectorAll('.chatroom-btn');
             chatroomBtns.forEach(btn => {
@@ -2308,13 +2319,6 @@
             });
 
             lucide.createIcons();
-            
-            // Load Google Maps API
-             const script = document.createElement('script');
-             script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&libraries=places&callback=initializeSerenityMap`;
-             script.async = true;
-             window.initializeSerenityMap = initializeSerenityMap; // Make it globally accessible
-             document.head.appendChild(script);
 
             try {
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
