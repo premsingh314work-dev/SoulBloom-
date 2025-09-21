@@ -424,18 +424,16 @@
             <div class="lg:col-span-3 grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <!-- Left Column -->
                 <div class="lg:col-span-1 flex flex-col gap-6">
-                    <!-- Quick Links -->
+                    <!-- Helpful Links -->
                     <div class="widget">
                         <div class="flex justify-between items-center">
                             <h2 class="text-xl mb-3 flex items-center gap-2"><i data-lucide="link-2"
-                                    class="w-5 h-5"></i> Quick Links</h2>
-                            <button id="quick-goal-btn"
-                                class="text-sm bg-green-500/80 text-white px-3 py-1 rounded hover:bg-green-600">✨ Quick
-                                Goal</button>
+                                    class="w-5 h-5"></i> Helpful Links</h2>
+                            <button id="helpful-link-btn"
+                                class="text-sm bg-green-500/80 text-white px-3 py-1 rounded hover:bg-green-600">✨ Find a Link</button>
                         </div>
-                        <ul id="quick-links-list" class="space-y-2 mt-2">
-                            <li><a href="#" class="hover:text-green-400">✧ dream life</a></li>
-                            <li><a href="#" class="hover:text-green-400">✧ notes</a></li>
+                        <ul id="helpful-links-list" class="space-y-2 mt-2">
+                             <li><a href="https://telemanas.mohfw.gov.in/" target="_blank" class="hover:text-green-400">✧ Tele MANAS</a></li>
                         </ul>
                     </div>
 
@@ -557,16 +555,15 @@
 
                 <!-- Right Column -->
                 <div class="lg:col-span-2 flex flex-col gap-6">
-                    <!-- Pixel Art GIFs -->
-                    <div class="flex justify-end items-start gap-2">
-                        <img src="../sources/gifs/a4a6b0a531328e5d9c984a793fa1ac04.gif" alt="pixel art cactus"
-                            class="h-16" style="image-rendering: pixelated;">
-                        <img src="../sources/gifs/795bdef79e07f2d391865c015fb106b3.gif" alt="pixel art plant pot"
-                            class="h-16" style="image-rendering: pixelated;">
-                        <img src="../sources/gifs/fc0f0994797c60813accf3c88591bcbf.gif" alt="pixel art succulent"
-                            class="h-16" style="image-rendering: pixelated;">
+                    <!-- Serenity Map -->
+                    <div class="widget">
+                         <h2 class="text-xl mb-3 flex items-center gap-2"><i data-lucide="map" class="w-5 h-5"></i> Serenity Map</h2>
+                         <div class="flex gap-2 mb-3">
+                            <input type="text" id="location-search-input" placeholder="Search any location in India..." class="w-full bg-[#2E3338] p-2 rounded border border-[#4A5568] focus:outline-none focus:ring-2 focus:ring-green-400 text-base">
+                            <button id="location-search-btn" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">Search</button>
+                         </div>
+                         <div id="map" class="w-full h-64 bg-[#2E3338] rounded"></div>
                     </div>
-
                     <!-- Assignments -->
                     <div class="widget">
                         <div class="flex justify-between items-center mb-3">
@@ -829,14 +826,15 @@
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, query, onSnapshot, serverTimestamp, doc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         
-        // --- API Keys ---
+        // --- IMPORTANT: ACTION REQUIRED ---
+        // Replace 'YOUR_..._KEY' with your actual API keys for the features to work.
         const GIPHY_API_KEY = 'D25UbHQ9ZhdSwlwPPLWcc3WUXbS8vzd0';
-         // **ACTION**: Paste your new Client IDs here.
-        const SPOTIFY_CLIENT_ID = '974fb988050a4b52a8dac1b812c8a9e4'; // Add your Spotify Client ID here
+        const SPOTIFY_CLIENT_ID = '974fb988050a4b52a8dac1b812c8a9e4';
         const YT_MUSIC_CLIENT_ID = '186638354534-sc0ecemspj32eqkqk3u67ma2fe87gfnj.apps.googleusercontent.com';
         const GOOGLE_FIT_CLIENT_ID = '691627541266-nup7p5ked390epqje1vbh4eova6d7lpc.apps.googleusercontent.com';
         const YOUTUBE_API_KEY = 'AIzaSyC4isDfYT5JO64BtH1lvBP0-etVBXhAThA';
-
+        const GOOGLE_MAPS_API_KEY = 'AIzaSyDJcx25l-e6uD-5aw2fybhxj4AxiriS4c8';
+        // --- END OF ACTION REQUIRED ---
 
         // --- Firebase Setup ---
         const firebaseConfig = {
@@ -980,18 +978,29 @@
             }
         });
 
-        // --- Quick Goal Logic ---
-        const quickGoalBtn = document.getElementById('quick-goal-btn');
-        const quickLinksList = document.getElementById('quick-links-list');
+        // --- Helpful Link Logic ---
+        const helpfulLinkBtn = document.getElementById('helpful-link-btn');
+        const helpfulLinksList = document.getElementById('helpful-links-list');
 
-        quickGoalBtn.addEventListener('click', async () => {
-            const prompt = "Generate a single, concise, and motivating personal goal.";
-            quickGoalBtn.disabled = true;
-            const newGoal = await getGeminiResponse(prompt);
-            const newListItem = document.createElement('li');
-            newListItem.innerHTML = `<a href="#" class="hover:text-green-400">✧ ${newGoal.replace(/['"]+/g, '')}</a>`;
-            quickLinksList.appendChild(newListItem);
-            quickGoalBtn.disabled = false;
+        helpfulLinkBtn.addEventListener('click', async () => {
+            const prompt = "Generate a single, helpful and meaningful link for a student looking to improve their well-being or productivity. Provide only the URL and a very short description, separated by a pipe |. For example: `https://www.example.com | A site for mindfulness`";
+            helpfulLinkBtn.disabled = true;
+            helpfulLinkBtn.textContent = 'Finding...';
+            const response = await getGeminiResponse(prompt);
+            
+            const parts = response.split('|');
+            if (parts.length === 2) {
+                const url = parts[0].trim();
+                const description = parts[1].trim();
+                const newListItem = document.createElement('li');
+                newListItem.innerHTML = `<a href="${url}" target="_blank" class="hover:text-green-400">✧ ${description}</a>`;
+                helpfulLinksList.appendChild(newListItem);
+            } else {
+                 console.warn("Could not parse helpful link response:", response);
+            }
+            
+            helpfulLinkBtn.disabled = false;
+            helpfulLinkBtn.textContent = '✨ Find a Link';
         });
 
         // --- Peer Chat Logic ---
@@ -1482,7 +1491,6 @@
 
             // --- Spotify Variables & Functions ---
             const SPOTIFY_REDIRECT_URI = window.location.origin + window.location.pathname;
-            console.log("Using Spotify Redirect URI:", SPOTIFY_REDIRECT_URI);
             
             async function redirectToAuthCodeFlow() {
                 const verifier = generateCodeVerifier(128);
@@ -2107,7 +2115,7 @@
             setTimeout(() => { saveJournalEntryBtn.textContent = 'Save Entry'; }, 2000);
         });
 
-        // --- Humata.ai Logic (Placeholder) ---
+        // --- Humata.ai Logic ---
         const studyHelpBtn = document.getElementById('study-help-btn');
         const studyHelpModal = document.getElementById('study-help-modal');
         const closeStudyHelpModal = document.getElementById('close-study-help-modal');
@@ -2122,7 +2130,7 @@
         const humataChatInput = document.getElementById('humata-chat-input');
         const humataChatSendBtn = document.getElementById('humata-chat-send-btn');
 
-        let uploadedFile = null;
+        let uploadedFileContent = null;
 
         function resetHumataModal() {
             humataUploadView.classList.remove('hidden');
@@ -2130,7 +2138,7 @@
             humataChatMessages.innerHTML = '';
             humataChatInput.value = '';
             humataFileName.textContent = 'PDF, DOCX (MAX. 5MB)';
-            uploadedFile = null;
+            uploadedFileContent = null;
         }
 
         studyHelpBtn.addEventListener('click', () => {
@@ -2150,11 +2158,16 @@
 
         humataFileUpload.addEventListener('change', (e) => {
             if (e.target.files.length > 0) {
-                uploadedFile = e.target.files[0];
-                humataUploadView.classList.add('hidden');
-                humataChatView.classList.remove('hidden');
-                humataChatFileName.textContent = uploadedFile.name;
-                displayHumataChatMessage(`File "${uploadedFile.name}" uploaded. What would you like to know?`, 'ai');
+                const file = e.target.files[0];
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    uploadedFileContent = event.target.result;
+                    humataUploadView.classList.add('hidden');
+                    humataChatView.classList.remove('hidden');
+                    humataChatFileName.textContent = file.name;
+                    displayHumataChatMessage(`File "${file.name}" uploaded. What would you like to know?`, 'ai');
+                };
+                reader.readAsText(file);
             }
         });
 
@@ -2173,7 +2186,7 @@
 
         async function handleHumataSendMessage() {
             const question = humataChatInput.value.trim();
-            if (!question || !uploadedFile) return;
+            if (!question || !uploadedFileContent) return;
 
             displayHumataChatMessage(question, 'user');
             humataChatInput.value = '';
@@ -2185,8 +2198,8 @@
             humataChatMessages.appendChild(typingIndicator);
             humataChatMessages.scrollTop = humataChatMessages.scrollHeight;
 
-            const prompt = `Based on the document named "${uploadedFile.name}", answer the following question: ${question}`;
-            const systemInstruction = "You are an AI assistant that answers questions based on a document context provided in the prompt. Do not mention the document name in your response.";
+            const prompt = `Based on the following document content:\n\n---\n${uploadedFileContent}\n---\n\nAnswer the following question: ${question}`;
+            const systemInstruction = "You are an AI assistant that answers questions based on the document context provided. Be concise and helpful.";
 
             const aiResponse = await getGeminiResponse(prompt, systemInstruction);
             
@@ -2198,6 +2211,73 @@
         humataChatInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') handleHumataSendMessage();
         });
+
+        // --- Serenity Map Logic ---
+        let map;
+        let placesService;
+        let infoWindow;
+
+        function initializeSerenityMap() {
+             if (GOOGLE_MAPS_API_KEY.includes('YOUR_')) {
+                 document.getElementById('map').innerHTML = `<div class="flex items-center justify-center h-full text-gray-400">Please add a Google Maps API Key to use this feature.</div>`;
+                 return;
+             }
+             if (typeof google === 'undefined' || typeof google.maps === 'undefined') {
+                 console.warn("Google Maps script not loaded yet. Map feature will be unavailable.");
+                 return;
+             }
+
+             const indiaCenter = { lat: 20.5937, lng: 78.9629 };
+             map = new google.maps.Map(document.getElementById("map"), {
+                 center: indiaCenter,
+                 zoom: 5,
+             });
+
+             infoWindow = new google.maps.InfoWindow();
+
+             document.getElementById('location-search-btn').addEventListener('click', () => {
+                 const query = document.getElementById('location-search-input').value;
+                 if (query) {
+                     searchPlaces(query);
+                 }
+             });
+        }
+        
+        function searchPlaces(query) {
+             const request = {
+                 query: `parks, cafes, libraries, quiet places in ${query}`,
+                 fields: ["name", "geometry", "formatted_address"],
+             };
+
+             placesService = new google.maps.places.PlacesService(map);
+             
+             placesService.textSearch(request, (results, status) => {
+                 if (status === google.maps.places.PlacesServiceStatus.OK && results) {
+                     map.setCenter(results[0].geometry.location);
+                     map.setZoom(12);
+
+                     for (let i = 0; i < results.length; i++) {
+                         createMarker(results[i]);
+                     }
+                 } else {
+                     alert("Could not find any locations for that search.");
+                 }
+             });
+        }
+        
+        function createMarker(place) {
+             if (!place.geometry || !place.geometry.location) return;
+
+             const marker = new google.maps.Marker({
+                 map,
+                 position: place.geometry.location,
+             });
+
+             google.maps.event.addListener(marker, "click", () => {
+                 infoWindow.setContent(`<strong>${place.name}</strong><br>${place.formatted_address}`);
+                 infoWindow.open(map, marker);
+             });
+        }
 
 
         // --- General Initialization ---
@@ -2228,6 +2308,13 @@
             });
 
             lucide.createIcons();
+            
+            // Load Google Maps API
+             const script = document.createElement('script');
+             script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&libraries=places&callback=initializeSerenityMap`;
+             script.async = true;
+             window.initializeSerenityMap = initializeSerenityMap; // Make it globally accessible
+             document.head.appendChild(script);
 
             try {
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
