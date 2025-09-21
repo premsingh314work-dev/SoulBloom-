@@ -932,7 +932,7 @@
 
         // --- Gemini API Integration ---
         const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent`;
-        const GEMINI_API_KEY = "";
+        const GEMINI_API_KEY = "AIzaSyDzX6NrBh-02my-Sll8stjoUYffBkgVB4Y";
 
         async function getGeminiResponse(prompt, customSystemInstruction = null) {
             const defaultSystemInstruction = "You are a helpful assistant. Important: You must not provide any medical, clinical, or therapeutic advice. Your goal is to be supportive and provide general information or creative ideas. If the user seems to be in distress or asks for advice related to health or mental well-being, you must gently decline and suggest they consult a qualified professional.";
@@ -1844,6 +1844,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             initializePage();
             loadProfilePic();
+            initializeMusicPlayer();
             loadAiChatHistory();
             populateEmotePicker();
             initializeHealthWidget();
