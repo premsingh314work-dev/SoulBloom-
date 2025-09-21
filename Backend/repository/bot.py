@@ -1,6 +1,6 @@
 import google.genai as genai
 from datetime import datetime
-from database import db
+from Backend.database import db
 import uuid
 client = genai.Client(api_key="AIzaSyDzX6NrBh-02my-Sll8stjoUYffBkgVB4Y")
 chats = db["bloosm_chats"]

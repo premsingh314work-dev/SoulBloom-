@@ -1,8 +1,8 @@
 from datetime import datetime
 from bson import ObjectId
-from database import db
-import schemas
-from auth import hash_password, verify_password, create_access_token
+from Backend.database import db
+from Backend import schemas
+from Backend.auth import hash_password, verify_password, create_access_token
 
 # signup
 async def create_user(request: schemas.UserCreate):

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, status
-import schemas
-from repository import users
+from Backend import schemas
+from Backend.repository import users
 
 router = APIRouter(
     prefix="/users",
