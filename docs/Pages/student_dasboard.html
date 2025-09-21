@@ -832,7 +832,7 @@
         // --- API Keys ---
         const GIPHY_API_KEY = 'D25UbHQ9ZhdSwlwPPLWcc3WUXbS8vzd0';
          // **ACTION**: Paste your new Client IDs here.
-        const SPOTIFY_CLIENT_ID = '974fb988050a4b52a8dac1b812c8a9e4'; // Add your Spotify Client ID here
+        const SPOTIFY_CLIENT_ID = 'YOUR_SPOTIFY_CLIENT_ID'; // Add your Spotify Client ID here
         const YT_MUSIC_CLIENT_ID = '186638354534-sc0ecemspj32eqkqk3u67ma2fe87gfnj.apps.googleusercontent.com';
         const GOOGLE_FIT_CLIENT_ID = '691627541266-nup7p5ked390epqje1vbh4eova6d7lpc.apps.googleusercontent.com';
         const YOUTUBE_API_KEY = 'AIzaSyC4isDfYT5JO64BtH1lvBP0-etVBXhAThA';
@@ -854,8 +854,7 @@
         const sanitizedAppId = appId.replace(/\//g, '_');
 
         let db, auth, currentUserId, currentUserAnonymousName;
-        let featuresInitialized = false;
-
+        
         function generateAnonymousName() {
             const adjectives = ["Brave", "Silent", "Wise", "Wandering", "Gentle", "Hidden", "Cosmic", "Lunar", "Solar", "Pixelated"];
             const nouns = ["River", "Fox", "Oak", "Badger", "Starlight", "Meadow", "Whisper", "Dreamer", "Voyager", "Sprite"];
@@ -874,23 +873,13 @@
         
         onAuthStateChanged(auth, user => {
             if (user) {
-                currentUserId = user.uid; // Always set UID for reference
+                currentUserId = user.uid;
                 
                 if (user.isAnonymous) {
-                    // Handle Anonymous User State
                     currentUserAnonymousName = "Guest";
                     const userNameElement = document.getElementById('user-anonymous-name');
                     if (userNameElement) userNameElement.textContent = currentUserAnonymousName;
-                    console.log(`Signed in anonymously with UID: ${user.uid}`);
-                    // Still call initializers; they will check storage mode and auth state.
-                    if (!featuresInitialized) {
-                        initializeAssignments();
-                        initializeJournaling();
-                        featuresInitialized = true;
-                    }
-
                 } else {
-                    // Handle Authenticated User State
                     let storedName = localStorage.getItem('anonymousUserName');
                     if (!storedName) {
                         storedName = generateAnonymousName();
@@ -899,21 +888,17 @@
                     currentUserAnonymousName = storedName;
                     const userNameElement = document.getElementById('user-anonymous-name');
                     if (userNameElement) userNameElement.textContent = currentUserAnonymousName;
-                    console.log(`Authenticated as: ${currentUserAnonymousName} (${currentUserId})`);
-                    
-                    if (!featuresInitialized) {
-                        initializeAssignments();
-                        initializeJournaling();
-                        featuresInitialized = true;
-                    }
                 }
             } else {
-                // Handle Signed Out State
                 currentUserId = null;
                 currentUserAnonymousName = "Guest";
-                featuresInitialized = false;
-                console.log("User is signed out.");
+                const userNameElement = document.getElementById('user-anonymous-name');
+                 if (userNameElement) userNameElement.textContent = currentUserAnonymousName;
             }
+            
+            initializeAssignments();
+            initializeJournaling();
+            initializeHealthWidget();
         });
 
 
@@ -1358,8 +1343,22 @@
                 }
             }
             async function handleAuthResponse(tokenResponse) {
-                if (tokenResponse.access_token) {
-                    gapi.client.setToken(tokenResponse); await fetchAndDisplayPlaylists();
+                 if (tokenResponse.access_token) {
+                    gapi.client.setToken(tokenResponse);
+                    musicPlayerContainer.innerHTML = '<div class="loader mx-auto mt-16"></div>';
+                    try {
+                        const response = await gapi.client.youtube.playlists.list({ part: 'snippet', mine: true, maxResults: 50 });
+                        if (response.result.items && response.result.items.length > 0) {
+                            renderUserPlaylists(response.result.items);
+                        } else {
+                            musicPlayerContainer.innerHTML = `<div class="text-center p-4">No public playlists found. <button id="yt-logout-btn" class="text-sm text-red-400 hover:text-white block mx-auto mt-2">Logout</button></div>`;
+                            document.getElementById('yt-logout-btn').addEventListener('click', handleYtLogout);
+                        }
+                    } catch (err) {
+                        console.error("Error fetching YT playlists:", err);
+                        musicPlayerContainer.innerHTML = `<div class="text-center p-4">Could not fetch playlists. <button id="yt-logout-btn" class="mx-auto block text-sm text-gray-400 hover:text-white mt-2">Logout</button></div>`;
+                        document.getElementById('yt-logout-btn').addEventListener('click', handleYtLogout);
+                    }
                 } else {
                     console.error("Auth response did not contain access token.", tokenResponse);
                     musicPlayerContainer.innerHTML = `<div class="text-center p-4">Authentication failed. Please try again.</div>`;
@@ -1681,11 +1680,9 @@
         }
 
         function initializeFirestoreAssignments() {
-            if (!db || !currentUserId) {
-                console.error("Firestore not initialized or user not authenticated for assignments.");
-                return;
-            }
-            if (auth.currentUser && auth.currentUser.isAnonymous) {
+            const user = auth.currentUser;
+
+            if (!user || user.isAnonymous) {
                 clearAssignmentsList();
                 const infoItem = document.createElement('div');
                 infoItem.className = 'text-center text-gray-400 p-4 col-span-full';
@@ -1694,7 +1691,8 @@
                 return;
             }
 
-            const assignmentsRef = collection(db, `artifacts/${sanitizedAppId}/users/${currentUserId}/assignments`);
+            // Proceed with fetching data for the authenticated user
+            const assignmentsRef = collection(db, `artifacts/${sanitizedAppId}/users/${user.uid}/assignments`);
             const q = query(assignmentsRef);
 
             unsubscribeFromAssignments = onSnapshot(q, (snapshot) => {
@@ -1746,7 +1744,10 @@
             if (!name) return;
 
             if (assignmentStorageMode === 'server') {
-                if (!db || !currentUserId) return;
+                if (!db || !currentUserId || (auth.currentUser && auth.currentUser.isAnonymous)) {
+                     alert("Please sign in to save assignments to the server.");
+                    return;
+                }
                 await addDoc(collection(db, `artifacts/${sanitizedAppId}/users/${currentUserId}/assignments`), {
                     name, course, dueDate, completed: false, createdAt: serverTimestamp()
                 });
@@ -1768,11 +1769,11 @@
         assignmentsList.addEventListener('click', async (e) => {
             const target = e.target;
             const taskItem = target.closest('.task-item');
-            if (!taskItem || !currentUserId) return;
+            if (!taskItem) return;
             const id = taskItem.dataset.id;
 
             if (assignmentStorageMode === 'server') {
-                if (!db) return;
+                 if (!db || !currentUserId || (auth.currentUser && auth.currentUser.isAnonymous)) return;
                 const docRef = doc(db, `artifacts/${sanitizedAppId}/users/${currentUserId}/assignments`, id);
                 if (target.matches('.task-checkbox')) {
                     await updateDoc(docRef, { completed: target.checked });
@@ -1869,16 +1870,14 @@
 
                 if (!response.ok) {
                     if (response.status === 401) {
-                        // Token expired or revoked
                         localStorage.removeItem('googleFitToken');
-                        initializeHealthWidget(); // Show login button again
+                        initializeHealthWidget();
                     }
                     throw new Error(`Google Fit API error: ${response.statusText}`);
                 }
 
                 const data = await response.json();
                 
-                // Process and display data
                 healthStatsContainer.innerHTML = '';
                 const stepBucket = data.bucket[0].dataset[0].point[0];
                 const steps = stepBucket?.value[0]?.intVal || 0;
@@ -1888,11 +1887,10 @@
                 
                 const sleepBucket = data.bucket[0].dataset[2].point;
                 let totalSleepMinutes = 0;
-                if(sleepBucket.length > 0){
+                if(sleepBucket && sleepBucket.length > 0){
                     sleepBucket.forEach(point => {
-                         // Sleep type 2 is light sleep, 4 is deep sleep
                         if(point.value[0].intVal === 2 || point.value[0].intVal === 4){
-                           totalSleepMinutes += (point.endTimeNanos - point.startTimeNanos) / 60000000;
+                           totalSleepMinutes += (point.endTimeNanos - point.startTimeNanos) / 60000000000;
                         }
                     });
                 }
@@ -1905,7 +1903,12 @@
 
             } catch (error) {
                 console.error("Failed to fetch Google Fit data:", error);
-                displayDummyHealthData(); // Show dummy data on error
+                 if (error.message.includes("Forbidden")) {
+                     googleFitAuthContainer.innerHTML = `<p class="text-sm text-red-400">Error: Access denied. Please ensure the <a href="https://console.cloud.google.com/apis/library/fitness.googleapis.com" target="_blank" class="underline">Fitness API</a> is enabled in your Google Cloud project.</p>`;
+                } else {
+                    googleFitAuthContainer.innerHTML = `<p class="text-sm text-red-400">Could not fetch data.</p>`;
+                }
+                displayDummyHealthData();
             }
         }
 
@@ -1913,6 +1916,12 @@
         function initializeHealthWidget() {
             const fitToken = localStorage.getItem('googleFitToken');
             
+            if (auth.currentUser && auth.currentUser.isAnonymous) {
+                displayDummyHealthData();
+                googleFitAuthContainer.innerHTML = `<p class="text-sm text-gray-400">Please sign in to connect Google Fit.</p>`;
+                return;
+            }
+
             if (fitToken) {
                 googleFitAuthContainer.innerHTML = `<p class="text-sm text-green-400">Syncing Google Fit...</p>`;
                 fetchGoogleFitData(fitToken);
@@ -1948,7 +1957,7 @@
         async function handleFitAuthResponse(tokenResponse) {
             if (tokenResponse.access_token) {
                 localStorage.setItem('googleFitToken', tokenResponse.access_token);
-                googleFitAuthContainer.innerHTML = `<p class="text-sm text-green-400">Google Fit Connected!</p>`;
+                googleFitAuthContainer.innerHTML = `<p class="text-sm text-green-400">Syncing Google Fit...</p>`;
                 fetchGoogleFitData(tokenResponse.access_token);
             } else {
                 googleFitAuthContainer.innerHTML = `<p class="text-sm text-red-400">Failed to connect Google Fit.</p>`;
@@ -1981,12 +1990,12 @@
         }
 
         function initializeFirestoreJournal() {
-            if (!db || !currentUserId) return;
-            if (auth.currentUser && auth.currentUser.isAnonymous) {
+            const user = auth.currentUser;
+            if (!user || user.isAnonymous) {
                 journalHistoryList.innerHTML = '<p class="text-sm text-center text-gray-400">Sign in to sync journal entries.</p>';
                 return;
             }
-            const journalRef = collection(db, `artifacts/${sanitizedAppId}/users/${currentUserId}/journal`);
+            const journalRef = collection(db, `artifacts/${sanitizedAppId}/users/${user.uid}/journal`);
             const q = query(journalRef);
             unsubscribeFromJournal = onSnapshot(q, snapshot => {
                 journalHistoryList.innerHTML = '';
@@ -2068,8 +2077,9 @@
             if (!entryText) return;
 
             if (journalStorageMode === 'server') {
-                if (!db || !currentUserId) {
-                    alert("Cannot save entry. Connection not established."); return;
+                 if (!db || !currentUserId || (auth.currentUser && auth.currentUser.isAnonymous)) {
+                     alert("Please sign in to save journal entries to the server.");
+                    return;
                 }
                 try {
                     await addDoc(collection(db, `artifacts/${sanitizedAppId}/users/${currentUserId}/journal`), {
@@ -2160,7 +2170,7 @@
 
         async function handleHumataSendMessage() {
             const question = humataChatInput.value.trim();
-            if (!question) return;
+            if (!question || !uploadedFile) return;
 
             displayHumataChatMessage(question, 'user');
             humataChatInput.value = '';
@@ -2172,13 +2182,13 @@
             humataChatMessages.appendChild(typingIndicator);
             humataChatMessages.scrollTop = humataChatMessages.scrollHeight;
 
-            // ** Placeholder for actual Humata.ai API call **
-            console.log("Simulating Humata.ai follow-up...");
+            const prompt = `Based on the document named "${uploadedFile.name}", answer the following question: ${question}`;
+            const systemInstruction = "You are an AI assistant that answers questions based on a document context provided in the prompt. Do not mention the document name in your response.";
 
-            setTimeout(() => {
-                document.getElementById('humata-typing-indicator').remove();
-                displayHumataChatMessage("This is a simulated follow-up answer based on the document.", 'ai');
-            }, 1500);
+            const aiResponse = await getGeminiResponse(prompt, systemInstruction);
+            
+            document.getElementById('humata-typing-indicator').remove();
+            displayHumataChatMessage(aiResponse, 'ai');
         }
 
         humataChatSendBtn.addEventListener('click', handleHumataSendMessage);
@@ -2194,7 +2204,6 @@
             initializeMusicPlayer();
             loadAiChatHistory();
             populateEmotePicker();
-            initializeHealthWidget();
 
             const chatroomBtns = document.querySelectorAll('.chatroom-btn');
             chatroomBtns.forEach(btn => {
@@ -2217,19 +2226,16 @@
 
             lucide.createIcons();
 
-            // Authentication is handled by the onAuthStateChanged listener, 
-            // which is set up when the script loads.
-            // This block now triggers the initial sign-in.
             try {
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                     await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
+                } else if (!auth.currentUser) {
                     await signInAnonymously(auth);
                 }
             } catch (error) {
-                console.error("Initial authentication failed, attempting anonymous sign-in as fallback.", error);
+                console.error("Initial authentication failed:", error);
                 if (!auth.currentUser) {
-                    try {
+                     try {
                         await signInAnonymously(auth);
                     } catch (anonError) {
                         console.error("Fallback anonymous sign-in also failed.", anonError);
