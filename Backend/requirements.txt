@@ -11,8 +11,8 @@ uvicorn[standard]
 motor
 
 # Security & Auth
-passlib[bcrypt]
-python-jose[cryptography]
+passlib[bcrypt]==1.7.4
+python-jose[cryptography]==3.3.0
 
 # HTTP Requests
 requests
@@ -21,3 +21,8 @@ pydantic[email]
 pymongo[srv]
 # google gemini
 google-genai
+
+
+
+bcrypt==3.2.2
+
